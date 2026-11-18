@@ -1208,7 +1208,7 @@
         document.getElementById('cardAvatar').src = selectedMember.pic;
         document.getElementById('cardName').textContent = selectedMember.name;
         document.getElementById('cardJoinDays').textContent = `已加入 L>S 社群 ${selectedMember.joinDays} 天`;
-        document.getElementById('cardJoinDate').textContent = `${selectedMember.joinDate || '未填寫'} (已加入 ${selectedMember.joinDays} 天)`;
+        document.getElementById('cardJoinDate').textContent = `${selectedMember.joinDate || '未填寫'}`;
         document.getElementById('cardZodiac').textContent = selectedMember.zodiac || '秘密 🤫';
         document.getElementById('cardResidence').textContent = selectedMember.residence || '未填寫';
         document.getElementById('cardOccupation').textContent = selectedMember.occupation || '未填寫';
