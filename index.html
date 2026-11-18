@@ -771,25 +771,19 @@
     });
 
     /**
-     * LIFF 與全域身分認證多重解析器
+     * LIFF 與全域身分認證 (由 LINE 官方 SDK 自動嚴格驗證，禁止手動自選或竄改)
      */
     function initLiffAuth() {
         const urlParams = new URLSearchParams(window.location.search);
-        const liffId = urlParams.get('liffId') || '2005700153-eZXxLey5';
+        const liffId = urlParams.get('liffId') || DEFAULT_LIFF_ID;
 
-        // 層級 1：檢查 GAS 後端 doGet(e) 伺服器端注入之 User ID (最抗 iframe 阻斷)
+        // 1. 檢查 GAS 後端 doGet(e) 伺服器端注入之 User ID (若存在)
         if (typeof window.SERVER_USER_ID !== 'undefined' && window.SERVER_USER_ID && window.SERVER_USER_ID.trim()) {
             liffDiag.serverUserId = window.SERVER_USER_ID.trim();
             handleLoginSuccess(liffDiag.serverUserId, '已驗證成員');
         }
 
-        // 層級 2：檢查 URL 參數中的 userId 或 uid
-        const paramUserId = urlParams.get('userId') || urlParams.get('uid');
-        if (paramUserId && !currentUserId) {
-            handleLoginSuccess(paramUserId, 'LINE 使用者');
-        }
-
-        // 層級 3：檢查 localStorage 本地持久化記錄 (登入一次後永久記住)
+        // 2. 檢查 localStorage 本地持久化記錄 (僅作為快速載入快取)
         try {
             const cachedUid = localStorage.getItem('ls_member_uid');
             const cachedName = localStorage.getItem('ls_member_name');
@@ -799,19 +793,7 @@
             }
         } catch (e) {}
 
-        // 層級 4：若在 Google Apps Script iframe 環境中，嘗試透過 getLocation 取得參數
-        if (window.google && google.script && google.script.url) {
-            google.script.url.getLocation(function(loc) {
-                if (loc && loc.parameter) {
-                    const pUid = loc.parameter.userId || loc.parameter.uid;
-                    if (pUid && !currentUserId) {
-                        handleLoginSuccess(pUid, 'LINE 使用者');
-                    }
-                }
-            });
-        }
-
-        // 層級 5：初始化 LINE LIFF SDK (取得 Context / ID Token / Profile)
+        // 3. 初始化 LINE LIFF SDK (正式官方認證，防竄改)
         if (window.liff) {
             liffDiag.sdkLoaded = true;
             liff.init({ liffId: liffId }).then(() => {
@@ -821,30 +803,7 @@
                     liffDiag.isLoggedIn = liff.isLoggedIn();
                 } catch (e) {}
 
-                // 核心關鍵 5-A: 從 LIFF Context 直接提取 userId (在手機 LINE 內無需額外登入權限即可取得)
-                try {
-                    const context = liff.getContext();
-                    if (context) {
-                        liffDiag.contextType = context.type;
-                        if (context.userId) {
-                            liffDiag.contextUserId = context.userId;
-                            handleLoginSuccess(context.userId, 'LINE 成員');
-                        }
-                    }
-                } catch (e) {
-                    console.warn("取得 LIFF Context 失敗:", e);
-                }
-
-                // 核心關鍵 5-B: 從 Decoded ID Token 提取 sub
-                try {
-                    const idToken = liff.getDecodedIDToken();
-                    if (idToken && idToken.sub) {
-                        liffDiag.idTokenSub = idToken.sub;
-                        handleLoginSuccess(idToken.sub, idToken.name || 'LINE 使用者');
-                    }
-                } catch (e) {}
-
-                // 核心關鍵 5-C: 若為已登入狀態，透過 getProfile 提取真實暱稱與頭像
+                // 若為已登入狀態，透過 getProfile 提取真實 LINE 身分
                 if (liff.isLoggedIn()) {
                     liff.getProfile().then(profile => {
                         liffDiag.profileUserId = profile.userId;
@@ -853,6 +812,15 @@
                         console.warn("liff.getProfile 錯誤:", err);
                         liffDiag.lastError = "getProfile: " + (err.message || err);
                     });
+                } else if (liff.isInClient()) {
+                    // 手機 LINE 內部開啟時，直接由 Context 提取使用者 ID
+                    try {
+                        const context = liff.getContext();
+                        if (context && context.userId) {
+                            liffDiag.contextUserId = context.userId;
+                            handleLoginSuccess(context.userId, 'LINE 成員');
+                        }
+                    } catch (e) {}
                 } else {
                     if (!currentUserId) updateAuthUI(false, "訪客模式");
                 }
@@ -903,134 +871,22 @@
         if (isLoggedIn && currentUserId) {
             authPill.className = 'auth-pill logged-in';
             authPill.innerHTML = `👤 ${escapeHtml(currentDisplayName || '我的名片')}`;
-            authPill.title = '點擊查看身分資訊或切換成員';
+            authPill.title = '點擊開啟我的個人數位名片';
         } else {
             authPill.className = 'auth-pill guest';
-            authPill.innerHTML = '🔑 訪客模式 (點此驗證)';
-            authPill.title = '點擊了解 LINE 身分驗證或選取我的身分';
+            authPill.innerHTML = '🔑 訪客模式 (點此登入)';
+            authPill.title = '點擊登入 LINE 以確認身分';
         }
     }
 
     function handleAuthClick() {
         if (currentUserId) {
-            // 已辨識身分：點擊可查看身分卡片、直達名片或切換身分
-            Swal.fire({
-                title: `👤 ${currentDisplayName}`,
-                html: `<div style="text-align: left; font-size: 0.9rem; line-height: 1.6; color: #4b5563;">
-                    <p><b>您的 LINE UID：</b><br><code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;word-break:break-all;font-size:0.8rem;">${currentUserId}</code></p>
-                    <p style="margin-top:8px;">✅ 您已通過身分驗證，享有本人名片編輯權限！</p>
-                </div>`,
-                icon: 'success',
-                showCancelButton: true,
-                showDenyButton: true,
-                confirmButtonColor: '#4a8c72',
-                denyButtonColor: '#ef4444',
-                cancelButtonColor: '#9ca3af',
-                confirmButtonText: '📇 打開我的名片',
-                denyButtonText: '🔄 切換/重設身分',
-                cancelButtonText: '關閉'
-            }).then((res) => {
-                if (res.isConfirmed) {
-                    openProfileModalByUserId(currentUserId);
-                } else if (res.isDenied) {
-                    clearUserIdentity();
-                }
-            });
+            // 已由 LINE 官方驗證身分：點擊直接開啟本人名片 (不顯示 UID，禁止手動切換)
+            openProfileModalByUserId(currentUserId);
         } else {
-            // 未辨識身分：開啟身分驗證診斷與快速選取視窗
-            showAuthDiagnosisModal();
+            // 未登入：透過官方 LINE LIFF 進行授權登入
+            redirectToLiffAuth();
         }
-    }
-
-    function clearUserIdentity() {
-        try {
-            localStorage.removeItem('ls_member_uid');
-            localStorage.removeItem('ls_member_name');
-        } catch (e) {}
-        currentUserId = null;
-        currentDisplayName = null;
-        updateAuthUI(false, "已登出");
-        displayFilteredMembers(getCurrentFilteredList());
-        if (selectedMember) updateEditButtonVisibility();
-        Swal.fire('已重設身分', '您目前已切換回訪客預覽模式。', 'info');
-    }
-
-    function showAuthDiagnosisModal() {
-        const liffUrl = 'https://liff.line.me/2005700153-eZXxLey5';
-        let diagHtml = `
-            <div style="text-align: left; font-size: 0.88rem; line-height: 1.5; color: #374151;">
-                <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.8rem;">
-                    <b>🔍 環境檢測狀態：</b><br>
-                    • LIFF SDK: ${liffDiag.sdkLoaded ? '✅ 已載入' : '❌ 未載入'}<br>
-                    • LIFF Init: ${liffDiag.initSuccess ? '✅ 成功' : '⚠️ 待確認'}<br>
-                    • In LINE Client: ${liffDiag.isInClient ? '✅ 是 (手機 LINE 內)' : '💻 否 (外部/電腦瀏覽器)'}<br>
-                    • Login 狀態: ${liffDiag.isLoggedIn ? '✅ 已登入' : '⚪ 訪客/未登入'}<br>
-                    ${liffDiag.lastError ? `• 錯誤記錄: <span style="color:#dc2626;">${escapeHtml(liffDiag.lastError)}</span><br>` : ''}
-                </div>
-                <p style="margin-bottom: 6px;"><b>若自動驗證未生效，請選擇以下任一方式解鎖名片：</b></p>
-                <p style="margin-bottom: 4px;">1️⃣ <b>快速身分綁定（最推薦）：</b>點選下方【選取我的成員身分】，直接選取您在群組中的暱稱，即可解鎖編輯權限並永久記住！</p>
-                <p>2️⃣ <b>LINE 官方授權：</b>若在電腦端，點選【前往 LINE 登入】以完整頂層視窗授權。</p>
-            </div>
-        `;
-
-        Swal.fire({
-            title: '🔑 LINE 身分驗證',
-            html: diagHtml,
-            icon: 'info',
-            showCancelButton: true,
-            showDenyButton: true,
-            confirmButtonColor: '#4a8c72',
-            denyButtonColor: '#0D9488',
-            cancelButtonColor: '#9ca3af',
-            confirmButtonText: '🙋‍♂️ 選取我的成員身分 (快速解鎖)',
-            denyButtonText: '🚀 前往 LINE 登入',
-            cancelButtonText: '取消'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                promptMemberSelection();
-            } else if (result.isDenied) {
-                redirectToLiffAuth();
-            }
-        });
-    }
-
-    function promptMemberSelection() {
-        if (!allMembers || allMembers.length === 0) {
-            Swal.fire('提示', '成員名冊載入中，請稍候片刻再試。', 'info');
-            return;
-        }
-
-        let memberOptions = {};
-        allMembers.forEach(m => {
-            memberOptions[m.id] = `${m.name} (${m.residence !== '未填寫' ? m.residence : 'L>S 成員'})`;
-        });
-
-        Swal.fire({
-            title: '請選擇您的成員身分',
-            text: '選定後系統將直接記住此裝置為您本人，立即解鎖編輯名片功能！',
-            input: 'select',
-            inputOptions: memberOptions,
-            inputPlaceholder: '請在清單中選取您的暱稱...',
-            showCancelButton: true,
-            confirmButtonColor: '#4a8c72',
-            confirmButtonText: '確認這是我 ✅',
-            cancelButtonText: '取消',
-            inputValidator: (val) => {
-                if (!val) return '請先選擇一位成員！';
-            }
-        }).then((selRes) => {
-            if (selRes.isConfirmed && selRes.value) {
-                const targetUid = selRes.value;
-                const targetMember = allMembers.find(m => m.id === targetUid);
-                handleLoginSuccess(targetUid, targetMember ? targetMember.name : '社群成員');
-                Swal.fire({
-                    icon: 'success',
-                    title: `歡迎回來，${targetMember ? targetMember.name : ''}！`,
-                    text: '已成功識別您的身分，您的名片已標記「我」，並已開放編輯自介權限。',
-                    confirmButtonColor: '#4a8c72'
-                });
-            }
-        });
     }
 
     function redirectToLiffAuth() {
