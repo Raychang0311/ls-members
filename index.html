@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+    <title>L>S 成員名冊與名片</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script>
+        // 若在 GAS 樣板環境下由後端注入，否則維持空字串 (避免在靜態環境下引發語法錯誤)
+        window.SERVER_USER_ID = ("<?= typeof serverUserId !== 'undefined' ? serverUserId : '' ?>".startsWith("<?=") ? "" : "<?= typeof serverUserId !== 'undefined' ? serverUserId : '' ?>");
+    </script>
+
+    <style>
+        :root {
+            --primary: #4a8c72;
+            --primary-dark: #3a6e59;
+            --primary-light: #e8f5e9;
+            --accent: #0D9488;
+            --bg: #f0f4f3;
+            --card-bg: #ffffff;
+            --text-main: #1f2937;
+            --text-sub: #6b7280;
+            --border-color: #e5e7eb;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Noto Sans TC', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            padding: 16px 12px 60px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 680px;
+        }
+
+        /* 頂部標題與搜尋區 */
+        .header-bar {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 18px 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            margin-bottom: 16px;
+        }
+
+        .header-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .header-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--primary-dark);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .count-pill {
+            background-color: var(--primary-light);
+            color: var(--primary-dark);
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        .auth-pill {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .auth-pill.logged-in {
+            background-color: #dcfce7;
+            color: #15803d;
+            border: 1px solid #bbf7d0;
+        }
+
+        .auth-pill.guest {
+            background-color: #f3f4f6;
+            color: #6b7280;
+            border: 1px solid #e5e7eb;
+        }
+
+        .auth-pill.guest:hover {
+            background-color: #e5e7eb;
+            color: #1f2937;
+        }
+
+        .my-tag-badge {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            background: var(--primary);
+            color: #ffffff;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 10px;
+            border: 2px solid #ffffff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .is-me-card {
+            border: 2px solid #a7f3d0 !important;
+            background: #f0fdf4 !important;
+        }
+
+        .btn-guest-login {
+            width: 100%;
+            background: #f9fafb;
+            color: #4b5563;
+            border: 1px dashed #9ca3af;
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn-guest-login:hover {
+            background: #e5e7eb;
+            color: #1f2937;
+        }
+
+        .search-box {
+            position: relative;
+            width: 100%;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 14px 10px 38px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            font-size: 0.95rem;
+            background: #f9fafb;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: var(--primary);
+            background: #ffffff;
+            box-shadow: 0 0 0 3px rgba(74, 140, 114, 0.15);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+
+        /* 成員列表網格 */
+        .member-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .member-card {
+            background: var(--card-bg);
+            border-radius: 14px;
+            padding: 14px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            border: 1px solid #f3f4f6;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            position: relative;
+        }
+
+        .member-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+        }
+
+        .avatar-wrap {
+            position: relative;
+            width: 64px;
+            height: 64px;
+            margin-bottom: 8px;
+        }
+
+        .member-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #ffffff;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+        }
+
+        .rainbow-border {
+            border: 2px solid transparent;
+            background-image: linear-gradient(white, white), linear-gradient(135deg, #f43f5e, #f59e0b, #10b981, #3b82f6, #8b5cf6);
+            background-origin: border-box;
+            background-clip: content-box, border-box;
+        }
+
+        .member-name {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-main);
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+
+        .primary-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #ffffff;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .member-meta-row {
+            font-size: 0.75rem;
+            color: var(--text-sub);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            width: 100%;
+        }
+
+        .meta-item {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Loading Spinner */
+        #loading {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border: 4px solid #e5e7eb;
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 通用 Lightbox 遮罩 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.65);
+            z-index: 3000;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+            backdrop-filter: blur(3px);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        /* 個人名片 Modal */
+        .profile-card-modal {
+            background: #ffffff;
+            width: 100%;
+            max-width: 420px;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 12px 35px rgba(0,0,0,0.25);
+            transform: scale(0.92);
+            transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-overlay.active .profile-card-modal {
+            transform: scale(1);
+        }
+
+        .modal-header-bg {
+            background: linear-gradient(135deg, #3a6e59, #4a8c72, #0D9488);
+            padding: 24px 20px 20px;
+            text-align: center;
+            color: #ffffff;
+            position: relative;
+        }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: rgba(0, 0, 0, 0.2);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #ffffff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            margin: 0 auto 10px;
+            display: block;
+        }
+
+        .modal-user-name {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .modal-user-sub {
+            font-size: 0.8rem;
+            opacity: 0.9;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* 徽章勳章牆 */
+        .section-label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-sub);
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .badges-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .badge-pill {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background: #f3f4f6;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+        }
+
+        .badge-pill.gold {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #fde68a;
+        }
+
+        .badge-pill.champion {
+            background: #fdf2f8;
+            color: #9d174d;
+            border-color: #fbcfe8;
+        }
+
+        /* 個人詳細資訊卡 */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .info-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .info-cell-title {
+            font-size: 0.75rem;
+            color: var(--text-sub);
+        }
+
+        .info-cell-val {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* 自我介紹區 */
+        .bio-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 0.9rem;
+            color: #166534;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* 活動統計條 */
+        .stats-strip {
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            border-top: 1px dashed var(--border-color);
+            border-bottom: 1px dashed var(--border-color);
+            text-align: center;
+        }
+
+        .stat-block .stat-num {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--primary-dark);
+        }
+
+        .stat-block .stat-lbl {
+            font-size: 0.7rem;
+            color: var(--text-sub);
+        }
+
+        /* 編輯按鈕 */
+        .btn-edit-profile {
+            width: 100%;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: background 0.2s;
+        }
+
+        .btn-edit-profile:hover {
+            background: var(--primary-dark);
+        }
+
+        /* 編輯 Form Modal */
+        .edit-form-group {
+            margin-bottom: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .edit-form-group label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .edit-input, .edit-select, .edit-textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            outline: none;
+        }
+
+        .edit-input:focus, .edit-select:focus, .edit-textarea:focus {
+            border-color: var(--primary);
+        }
+
+        .edit-textarea {
+            resize: vertical;
+            min-height: 90px;
+            line-height: 1.4;
+        }
+
+        .edit-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .btn-save {
+            flex: 2;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 11px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .btn-cancel {
+            flex: 1;
+            background: #e5e7eb;
+            color: #374151;
+            border: none;
+            padding: 11px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <div class="spinner"></div>
+    <p style="margin-top: 12px; color: #4b5563; font-weight: 500;">載入成員名冊中...</p>
+</div>
+
+<div class="container">
+    <div class="header-bar">
+        <div class="header-title-row">
+            <div class="header-title">
+                <span>🌈</span>
+                <span>L>S 成員名冊</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <div class="auth-pill guest" id="authPill" onclick="handleAuthClick()">身分驗證中...</div>
+                <div class="count-pill" id="memberCountBadge">0 位成員</div>
+            </div>
+        </div>
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" class="search-input" placeholder="搜尋暱稱、職業、居住地或星座..." oninput="handleSearch()">
+        </div>
+    </div>
+
+    <div class="member-grid" id="memberGrid">
+        <!-- 動態渲染成員卡片 -->
+    </div>
+</div>
+
+<!-- 個人數位名片 Lightbox -->
+<div class="modal-overlay" id="profileModalOverlay" onclick="closeProfileModal()">
+    <div class="profile-card-modal" onclick="event.stopPropagation()">
+        <div class="modal-header-bg">
+            <button class="modal-close-btn" onclick="closeProfileModal()">✕</button>
+            <img id="cardAvatar" class="modal-avatar" src="" alt="avatar">
+            <div class="modal-user-name" id="cardName">成員名稱</div>
+            <div class="modal-user-sub" id="cardJoinDays">已加入 L>S 社群 0 天</div>
+        </div>
+        <div class="modal-body">
+            <!-- 資訊網格 (星座、居住地、職業、感情狀態) -->
+            <div class="info-grid">
+                <div class="info-cell">
+                    <span class="info-cell-title">✨ 星座</span>
+                    <span class="info-cell-val" id="cardZodiac">金牛座 ♉</span>
+                </div>
+                <div class="info-cell">
+                    <span class="info-cell-title">📍 居住地</span>
+                    <span class="info-cell-val" id="cardResidence">台北市</span>
+                </div>
+                <div class="info-cell">
+                    <span class="info-cell-title">💼 職業</span>
+                    <span class="info-cell-val" id="cardOccupation">工程師</span>
+                </div>
+                <div class="info-cell">
+                    <span class="info-cell-title">💖 感情狀態</span>
+                    <span class="info-cell-val" id="cardRelationship">單身</span>
+                </div>
+            </div>
+
+            <!-- 自我介紹 -->
+            <div>
+                <div class="section-label">📝 自我介紹</div>
+                <div class="bio-box" id="cardBio">尚未留下自我介紹</div>
+            </div>
+
+            <!-- 榮譽勳章牆 -->
+            <div>
+                <div class="section-label">🏆 成就勳章牆</div>
+                <div class="badges-wrap" id="cardBadges">
+                    <!-- 動態徽章 -->
+                </div>
+            </div>
+
+            <!-- 社群活動統計 -->
+            <div class="stats-strip">
+                <div class="stat-block">
+                    <div class="stat-num" id="statHost">0</div>
+                    <div class="stat-lbl">主辦揪團</div>
+                </div>
+                <div class="stat-block">
+                    <div class="stat-num" id="statJoin">0</div>
+                    <div class="stat-lbl">參加揪團</div>
+                </div>
+                <div class="stat-block">
+                    <div class="stat-num" id="statMsg">0</div>
+                    <div class="stat-lbl">群組發言</div>
+                </div>
+                <div class="stat-block">
+                    <div class="stat-num" id="statUnsend">0</div>
+                    <div class="stat-lbl">收回訊息</div>
+                </div>
+            </div>
+
+            <!-- 本人專屬編輯按鈕 -->
+            <div id="selfEditArea" style="display: none;">
+                <button class="btn-edit-profile" onclick="openEditModal()">
+                    <span>✏️</span>
+                    <span>編輯我的名片與自我介紹</span>
+                </button>
+            </div>
+
+            <!-- 訪客/未登入提示引導 -->
+            <div id="guestEditHint" style="display: none; margin-top: 10px;">
+                <button type="button" class="btn-guest-login" onclick="handleAuthClick()">
+                    <span>🔑 驗證身分以解鎖編輯名片</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 編輯名片表單 Modal -->
+<div class="modal-overlay" id="editModalOverlay" onclick="closeEditModal()">
+    <div class="profile-card-modal" onclick="event.stopPropagation()">
+        <div class="modal-header-bg" style="padding: 16px 20px;">
+            <button class="modal-close-btn" onclick="closeEditModal()">✕</button>
+            <div class="modal-user-name" style="font-size: 1.15rem;">✏️ 編輯個人名片</div>
+        </div>
+        <div class="modal-body">
+            <div class="edit-form-group">
+                <label>📍 居住地</label>
+                <input type="text" id="editResidence" class="edit-input" placeholder="例如：台北市大安區、新北市板橋區" maxlength="30">
+            </div>
+            <div class="edit-form-group">
+                <label>💼 職業</label>
+                <input type="text" id="editOccupation" class="edit-input" placeholder="例如：軟體工程師、醫療公職、自由業" maxlength="30">
+            </div>
+            <div class="edit-form-group">
+                <label>💖 感情狀態</label>
+                <select id="editRelationship" class="edit-select">
+                    <option value="單身 🟢">單身 🟢</option>
+                    <option value="穩定交往中 💖">穩定交往中 💖</option>
+                    <option value="尋找穩定對象 🔍">尋找穩定對象 🔍</option>
+                    <option value="開放式關係 🌈">開放式關係 🌈</option>
+                    <option value="一言難盡 🌀">一言難盡 🌀</option>
+                    <option value="保密 🔒">保密 🔒</option>
+                </select>
+            </div>
+            <div class="edit-form-group">
+                <label>📝 自我介紹 (最多 300 字)</label>
+                <textarea id="editBio" class="edit-textarea" placeholder="分享一下你的喜好、常出沒地點或一句座右銘吧～" maxlength="300"></textarea>
+            </div>
+            <div class="edit-actions">
+                <button class="btn-cancel" onclick="closeEditModal()">取消</button>
+                <button class="btn-save" id="btnSaveProfile" onclick="submitProfileEdit()">儲存名片</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // =========================================================================
+    // 方案 A 前後端分離配置 (GitHub Pages 前端 + Google Apps Script 後端 API)
+    // =========================================================================
+    // 請將下方網址替換為您的 Google Apps Script Web App 部署網址 (必須為 /exec 結尾)
+    const GAS_API_URL = "https://script.google.com/macros/s/YOUR_GAS_DEPLOYMENT_ID/exec";
+    const DEFAULT_LIFF_ID = "2005700153-eZXxLey5";
+
+    let allMembers = [];
+    let currentUserId = null;
+    let currentDisplayName = null;
+    let selectedMember = null;
+
+    let liffDiag = {
+        sdkLoaded: false,
+        initSuccess: false,
+        isInClient: null,
+        isLoggedIn: null,
+        contextType: null,
+        contextUserId: null,
+        idTokenSub: null,
+        profileUserId: null,
+        serverUserId: null,
+        localUserId: null,
+        lastError: null
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // 1. 初始化身分認證 (多重架構：後端注入 + Context + ID Token + Profile + 本地持久化)
+        initLiffAuth();
+
+        // 2. 載入成員名冊
+        loadMembersDirectory();
+    });
+
+    /**
+     * LIFF 與全域身分認證多重解析器
+     */
+    function initLiffAuth() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const liffId = urlParams.get('liffId') || '2005700153-eZXxLey5';
+
+        // 層級 1：檢查 GAS 後端 doGet(e) 伺服器端注入之 User ID (最抗 iframe 阻斷)
+        if (typeof window.SERVER_USER_ID !== 'undefined' && window.SERVER_USER_ID && window.SERVER_USER_ID.trim()) {
+            liffDiag.serverUserId = window.SERVER_USER_ID.trim();
+            handleLoginSuccess(liffDiag.serverUserId, '已驗證成員');
+        }
+
+        // 層級 2：檢查 URL 參數中的 userId 或 uid
+        const paramUserId = urlParams.get('userId') || urlParams.get('uid');
+        if (paramUserId && !currentUserId) {
+            handleLoginSuccess(paramUserId, 'LINE 使用者');
+        }
+
+        // 層級 3：檢查 localStorage 本地持久化記錄 (登入一次後永久記住)
+        try {
+            const cachedUid = localStorage.getItem('ls_member_uid');
+            const cachedName = localStorage.getItem('ls_member_name');
+            if (cachedUid && !currentUserId) {
+                liffDiag.localUserId = cachedUid;
+                handleLoginSuccess(cachedUid, cachedName || '社群成員');
+            }
+        } catch (e) {}
+
+        // 層級 4：若在 Google Apps Script iframe 環境中，嘗試透過 getLocation 取得參數
+        if (window.google && google.script && google.script.url) {
+            google.script.url.getLocation(function(loc) {
+                if (loc && loc.parameter) {
+                    const pUid = loc.parameter.userId || loc.parameter.uid;
+                    if (pUid && !currentUserId) {
+                        handleLoginSuccess(pUid, 'LINE 使用者');
+                    }
+                }
+            });
+        }
+
+        // 層級 5：初始化 LINE LIFF SDK (取得 Context / ID Token / Profile)
+        if (window.liff) {
+            liffDiag.sdkLoaded = true;
+            liff.init({ liffId: liffId }).then(() => {
+                liffDiag.initSuccess = true;
+                try {
+                    liffDiag.isInClient = liff.isInClient();
+                    liffDiag.isLoggedIn = liff.isLoggedIn();
+                } catch (e) {}
+
+                // 核心關鍵 5-A: 從 LIFF Context 直接提取 userId (在手機 LINE 內無需額外登入權限即可取得)
+                try {
+                    const context = liff.getContext();
+                    if (context) {
+                        liffDiag.contextType = context.type;
+                        if (context.userId) {
+                            liffDiag.contextUserId = context.userId;
+                            handleLoginSuccess(context.userId, 'LINE 成員');
+                        }
+                    }
+                } catch (e) {
+                    console.warn("取得 LIFF Context 失敗:", e);
+                }
+
+                // 核心關鍵 5-B: 從 Decoded ID Token 提取 sub
+                try {
+                    const idToken = liff.getDecodedIDToken();
+                    if (idToken && idToken.sub) {
+                        liffDiag.idTokenSub = idToken.sub;
+                        handleLoginSuccess(idToken.sub, idToken.name || 'LINE 使用者');
+                    }
+                } catch (e) {}
+
+                // 核心關鍵 5-C: 若為已登入狀態，透過 getProfile 提取真實暱稱與頭像
+                if (liff.isLoggedIn()) {
+                    liff.getProfile().then(profile => {
+                        liffDiag.profileUserId = profile.userId;
+                        handleLoginSuccess(profile.userId, profile.displayName);
+                    }).catch(err => {
+                        console.warn("liff.getProfile 錯誤:", err);
+                        liffDiag.lastError = "getProfile: " + (err.message || err);
+                    });
+                } else {
+                    if (!currentUserId) updateAuthUI(false, "訪客模式");
+                }
+            }).catch(err => {
+                console.warn("liff.init 失敗:", err);
+                liffDiag.lastError = "init: " + (err.message || err);
+                if (!currentUserId) updateAuthUI(false, "未連線 LINE");
+            });
+        } else {
+            liffDiag.lastError = "LIFF SDK 未載入";
+            if (!currentUserId) updateAuthUI(false, "無 SDK");
+        }
+    }
+
+    function handleLoginSuccess(userId, displayName) {
+        if (!userId) return;
+        currentUserId = String(userId).trim();
+
+        // 嘗試在全體成員清單中尋找真實姓名
+        let matchedMember = allMembers.find(m => String(m.id).trim().toLowerCase() === currentUserId.toLowerCase());
+        currentDisplayName = (matchedMember && matchedMember.name) ? matchedMember.name : (displayName || '已登入成員');
+
+        console.log("LINE 認證成功:", currentUserId, currentDisplayName);
+
+        // 本地持久化記錄 (下次開啟免等待立即認證)
+        try {
+            localStorage.setItem('ls_member_uid', currentUserId);
+            localStorage.setItem('ls_member_name', currentDisplayName);
+        } catch (e) {}
+
+        updateAuthUI(true, currentDisplayName);
+
+        // 若成員名冊已載入，重新渲染以標記「我」卡片
+        if (allMembers && allMembers.length > 0) {
+            displayFilteredMembers(getCurrentFilteredList());
+        }
+
+        // 若目前已打開名片視窗，重新檢查編輯按鈕
+        if (selectedMember) {
+            updateEditButtonVisibility();
+        }
+    }
+
+    function updateAuthUI(isLoggedIn, displayName) {
+        const authPill = document.getElementById('authPill');
+        if (!authPill) return;
+
+        if (isLoggedIn && currentUserId) {
+            authPill.className = 'auth-pill logged-in';
+            authPill.innerHTML = `👤 ${escapeHtml(currentDisplayName || '我的名片')}`;
+            authPill.title = '點擊查看身分資訊或切換成員';
+        } else {
+            authPill.className = 'auth-pill guest';
+            authPill.innerHTML = '🔑 訪客模式 (點此驗證)';
+            authPill.title = '點擊了解 LINE 身分驗證或選取我的身分';
+        }
+    }
+
+    function handleAuthClick() {
+        if (currentUserId) {
+            // 已辨識身分：點擊可查看身分卡片、直達名片或切換身分
+            Swal.fire({
+                title: `👤 ${currentDisplayName}`,
+                html: `<div style="text-align: left; font-size: 0.9rem; line-height: 1.6; color: #4b5563;">
+                    <p><b>您的 LINE UID：</b><br><code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;word-break:break-all;font-size:0.8rem;">${currentUserId}</code></p>
+                    <p style="margin-top:8px;">✅ 您已通過身分驗證，享有本人名片編輯權限！</p>
+                </div>`,
+                icon: 'success',
+                showCancelButton: true,
+                showDenyButton: true,
+                confirmButtonColor: '#4a8c72',
+                denyButtonColor: '#ef4444',
+                cancelButtonColor: '#9ca3af',
+                confirmButtonText: '📇 打開我的名片',
+                denyButtonText: '🔄 切換/重設身分',
+                cancelButtonText: '關閉'
+            }).then((res) => {
+                if (res.isConfirmed) {
+                    openProfileModalByUserId(currentUserId);
+                } else if (res.isDenied) {
+                    clearUserIdentity();
+                }
+            });
+        } else {
+            // 未辨識身分：開啟身分驗證診斷與快速選取視窗
+            showAuthDiagnosisModal();
+        }
+    }
+
+    function clearUserIdentity() {
+        try {
+            localStorage.removeItem('ls_member_uid');
+            localStorage.removeItem('ls_member_name');
+        } catch (e) {}
+        currentUserId = null;
+        currentDisplayName = null;
+        updateAuthUI(false, "已登出");
+        displayFilteredMembers(getCurrentFilteredList());
+        if (selectedMember) updateEditButtonVisibility();
+        Swal.fire('已重設身分', '您目前已切換回訪客預覽模式。', 'info');
+    }
+
+    function showAuthDiagnosisModal() {
+        const liffUrl = 'https://liff.line.me/2005700153-eZXxLey5';
+        let diagHtml = `
+            <div style="text-align: left; font-size: 0.88rem; line-height: 1.5; color: #374151;">
+                <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.8rem;">
+                    <b>🔍 環境檢測狀態：</b><br>
+                    • LIFF SDK: ${liffDiag.sdkLoaded ? '✅ 已載入' : '❌ 未載入'}<br>
+                    • LIFF Init: ${liffDiag.initSuccess ? '✅ 成功' : '⚠️ 待確認'}<br>
+                    • In LINE Client: ${liffDiag.isInClient ? '✅ 是 (手機 LINE 內)' : '💻 否 (外部/電腦瀏覽器)'}<br>
+                    • Login 狀態: ${liffDiag.isLoggedIn ? '✅ 已登入' : '⚪ 訪客/未登入'}<br>
+                    ${liffDiag.lastError ? `• 錯誤記錄: <span style="color:#dc2626;">${escapeHtml(liffDiag.lastError)}</span><br>` : ''}
+                </div>
+                <p style="margin-bottom: 6px;"><b>若自動驗證未生效，請選擇以下任一方式解鎖名片：</b></p>
+                <p style="margin-bottom: 4px;">1️⃣ <b>快速身分綁定（最推薦）：</b>點選下方【選取我的成員身分】，直接選取您在群組中的暱稱，即可解鎖編輯權限並永久記住！</p>
+                <p>2️⃣ <b>LINE 官方授權：</b>若在電腦端，點選【前往 LINE 登入】以完整頂層視窗授權。</p>
+            </div>
+        `;
+
+        Swal.fire({
+            title: '🔑 LINE 身分驗證',
+            html: diagHtml,
+            icon: 'info',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonColor: '#4a8c72',
+            denyButtonColor: '#0D9488',
+            cancelButtonColor: '#9ca3af',
+            confirmButtonText: '🙋‍♂️ 選取我的成員身分 (快速解鎖)',
+            denyButtonText: '🚀 前往 LINE 登入',
+            cancelButtonText: '取消'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                promptMemberSelection();
+            } else if (result.isDenied) {
+                redirectToLiffAuth();
+            }
+        });
+    }
+
+    function promptMemberSelection() {
+        if (!allMembers || allMembers.length === 0) {
+            Swal.fire('提示', '成員名冊載入中，請稍候片刻再試。', 'info');
+            return;
+        }
+
+        let memberOptions = {};
+        allMembers.forEach(m => {
+            memberOptions[m.id] = `${m.name} (${m.residence !== '未填寫' ? m.residence : 'L>S 成員'})`;
+        });
+
+        Swal.fire({
+            title: '請選擇您的成員身分',
+            text: '選定後系統將直接記住此裝置為您本人，立即解鎖編輯名片功能！',
+            input: 'select',
+            inputOptions: memberOptions,
+            inputPlaceholder: '請在清單中選取您的暱稱...',
+            showCancelButton: true,
+            confirmButtonColor: '#4a8c72',
+            confirmButtonText: '確認這是我 ✅',
+            cancelButtonText: '取消',
+            inputValidator: (val) => {
+                if (!val) return '請先選擇一位成員！';
+            }
+        }).then((selRes) => {
+            if (selRes.isConfirmed && selRes.value) {
+                const targetUid = selRes.value;
+                const targetMember = allMembers.find(m => m.id === targetUid);
+                handleLoginSuccess(targetUid, targetMember ? targetMember.name : '社群成員');
+                Swal.fire({
+                    icon: 'success',
+                    title: `歡迎回來，${targetMember ? targetMember.name : ''}！`,
+                    text: '已成功識別您的身分，您的名片已標記「我」，並已開放編輯自介權限。',
+                    confirmButtonColor: '#4a8c72'
+                });
+            }
+        });
+    }
+
+    function redirectToLiffAuth() {
+        if (window.liff) {
+            // 在頂層視窗 (GitHub Pages) 下，直接執行標準 LINE Login 導向，無 iframe 阻斷
+            liff.login();
+            return;
+        }
+        const liffUrl = 'https://liff.line.me/' + DEFAULT_LIFF_ID;
+        window.location.href = liffUrl;
+    }
+
+    function loadMembersDirectory() {
+        if (window.google && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(renderDirectory)
+                .withFailureHandler(err => {
+                    document.getElementById('loading').style.display = 'none';
+                    Swal.fire('錯誤', '載入成員名冊失敗：' + err, 'error');
+                })
+                .getMembersDirectory();
+            return;
+        }
+
+        // 靜態前端 (GitHub Pages) 透過 fetch 呼叫 GAS 後端 API
+        if (!GAS_API_URL || GAS_API_URL.includes("YOUR_GAS_DEPLOYMENT_ID")) {
+            console.warn("GAS_API_URL 尚未設定");
+            document.getElementById('loading').style.display = 'none';
+            Swal.fire({
+                title: '尚未配置後端 API 網址',
+                html: '<div style="text-align:left;font-size:0.9rem;color:#4b5563;line-height:1.6;">請先至 <code>members/index.html</code> 第 744 行，將 <code>GAS_API_URL</code> 替換為您的 Google Apps Script Web App 部署網址（必須為 <code>/exec</code> 結尾）即可讀取即時名冊！</div>',
+                icon: 'warning',
+                confirmButtonColor: '#4a8c72'
+            });
+            return;
+        }
+
+        fetch(GAS_API_URL + '?action=getMembers')
+            .then(res => res.json())
+            .then(data => {
+                renderDirectory(data);
+            })
+            .catch(err => {
+                console.error("載入名冊失敗:", err);
+                document.getElementById('loading').style.display = 'none';
+                Swal.fire('載入失敗', '連線 Google Apps Script 伺服器失敗：' + err, 'error');
+            });
+    }
+
+    function renderDirectory(res) {
+        document.getElementById('loading').style.display = 'none';
+        if (!res || !res.success || !res.members) {
+            document.getElementById('memberGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:40px 0;">暫無成員資料</div>';
+            return;
+        }
+
+        allMembers = res.members;
+        document.getElementById('memberCountBadge').textContent = `${allMembers.length} 位成員`;
+        displayFilteredMembers(getCurrentFilteredList());
+    }
+
+    function getCurrentFilteredList() {
+        const input = document.getElementById('searchInput');
+        const q = input ? input.value.trim().toLowerCase() : '';
+        if (!q) return allMembers;
+
+        return allMembers.filter(m => {
+            return (m.name && m.name.toLowerCase().includes(q)) ||
+                   (m.residence && m.residence.toLowerCase().includes(q)) ||
+                   (m.occupation && m.occupation.toLowerCase().includes(q)) ||
+                   (m.zodiac && m.zodiac.toLowerCase().includes(q)) ||
+                   (m.badges && m.badges.some(b => b.toLowerCase().includes(q)));
+        });
+    }
+
+    function handleSearch() {
+        displayFilteredMembers(getCurrentFilteredList());
+    }
+
+    function displayFilteredMembers(list) {
+        const grid = document.getElementById('memberGrid');
+        if (!list || list.length === 0) {
+            grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:40px 0;">查無符合條件的成員</div>';
+            return;
+        }
+
+        let html = '';
+        list.forEach((m) => {
+            const isMe = currentUserId && m.id && (String(currentUserId).trim().toLowerCase() === String(m.id).trim().toLowerCase());
+            const primaryBadge = (m.badges && m.badges.length > 0) ? m.badges[0] : '';
+            const safeId = escapeHtml(m.id);
+            const safeName = escapeHtml(m.name);
+            const safeRes = escapeHtml(m.residence !== '未填寫' ? m.residence : '');
+            const safeOcc = escapeHtml(m.occupation !== '未填寫' ? m.occupation : '');
+            const safeZod = escapeHtml(m.zodiac || '');
+
+            let metaText = '';
+            if (safeRes && safeOcc) metaText = `📍 ${safeRes}<br>💼 ${safeOcc}`;
+            else if (safeRes) metaText = `📍 ${safeRes}`;
+            else if (safeOcc) metaText = `💼 ${safeOcc}`;
+            else metaText = `${safeZod}`;
+
+            html += `
+            <div class="member-card ${isMe ? 'is-me-card' : ''}" onclick="openProfileModalByUserId('${safeId}')">
+                <div class="avatar-wrap">
+                    <img class="member-avatar rainbow-border" src="${escapeHtml(m.pic)}" loading="lazy" onerror="this.src='https://imgur.com/786FxAA.jpg'">
+                    ${isMe ? '<div class="my-tag-badge">我</div>' : ''}
+                </div>
+                <div class="member-name">${safeName}</div>
+                ${primaryBadge ? `<div class="primary-badge">${escapeHtml(primaryBadge)}</div>` : ''}
+                <div class="member-meta-row">
+                    <span class="meta-item">${metaText}</span>
+                </div>
+            </div>`;
+        });
+
+        grid.innerHTML = html;
+    }
+
+    function openProfileModalByUserId(userId) {
+        if (!userId) return;
+        const target = allMembers.find(m => String(m.id).trim().toLowerCase() === String(userId).trim().toLowerCase());
+        if (!target) {
+            Swal.fire('提示', '找不到該成員的詳細資料', 'warning');
+            return;
+        }
+        selectedMember = target;
+
+        document.getElementById('cardAvatar').src = selectedMember.pic;
+        document.getElementById('cardName').textContent = selectedMember.name;
+        document.getElementById('cardJoinDays').textContent = `已加入 L>S 社群 ${selectedMember.joinDays} 天`;
+        document.getElementById('cardZodiac').textContent = selectedMember.zodiac || '秘密 🤫';
+        document.getElementById('cardResidence').textContent = selectedMember.residence || '未填寫';
+        document.getElementById('cardOccupation').textContent = selectedMember.occupation || '未填寫';
+        document.getElementById('cardRelationship').textContent = selectedMember.relationship || '未填寫';
+        document.getElementById('cardBio').textContent = selectedMember.bio || '這位朋友很神秘，還沒有留下自我介紹唷～';
+
+        // 勳章牆
+        let badgeHtml = '';
+        if (selectedMember.badges && selectedMember.badges.length > 0) {
+            selectedMember.badges.forEach(b => {
+                let badgeClass = 'badge-pill';
+                if (b.includes('冠軍') || b.includes('神')) badgeClass += ' champion';
+                else if (b.includes('達人') || b.includes('元老')) badgeClass += ' gold';
+                badgeHtml += `<span class="${badgeClass}">${escapeHtml(b)}</span>`;
+            });
+        } else {
+            badgeHtml = '<span style="color:#9ca3af;font-size:0.8rem;">尚無特殊稱號勳章</span>';
+        }
+        document.getElementById('cardBadges').innerHTML = badgeHtml;
+
+        // 活動數據
+        document.getElementById('statHost').textContent = selectedMember.hostCount;
+        document.getElementById('statJoin').textContent = selectedMember.joinCount;
+        document.getElementById('statMsg').textContent = selectedMember.textCount;
+        document.getElementById('statUnsend').textContent = selectedMember.unsendCount;
+
+        // 身分核對：只有當前登入者等於名片主人時，才開放編輯按鈕
+        updateEditButtonVisibility();
+
+        document.getElementById('profileModalOverlay').classList.add('active');
+    }
+
+    function updateEditButtonVisibility() {
+        const editArea = document.getElementById('selfEditArea');
+        const guestHint = document.getElementById('guestEditHint');
+
+        if (!selectedMember) {
+            if (editArea) editArea.style.display = 'none';
+            if (guestHint) guestHint.style.display = 'none';
+            return;
+        }
+
+        const isOwner = currentUserId && selectedMember.id &&
+            String(currentUserId).trim().toLowerCase() === String(selectedMember.id).trim().toLowerCase();
+
+        if (isOwner) {
+            if (editArea) editArea.style.display = 'block';
+            if (guestHint) guestHint.style.display = 'none';
+        } else {
+            if (editArea) editArea.style.display = 'none';
+            // 若未完成登入，提示使用者可以登入以驗證身分
+            if (!currentUserId && guestHint) {
+                guestHint.style.display = 'block';
+            } else {
+                if (guestHint) guestHint.style.display = 'none';
+            }
+        }
+    }
+
+    function closeProfileModal() {
+        document.getElementById('profileModalOverlay').classList.remove('active');
+    }
+
+    function openEditModal() {
+        if (!selectedMember) return;
+        document.getElementById('editResidence').value = (selectedMember.residence !== '未填寫') ? selectedMember.residence : '';
+        document.getElementById('editOccupation').value = (selectedMember.occupation !== '未填寫') ? selectedMember.occupation : '';
+        document.getElementById('editRelationship').value = (selectedMember.relationship !== '未填寫') ? selectedMember.relationship : '單身 🟢';
+        document.getElementById('editBio').value = (selectedMember.bio !== '這位朋友很神秘，還沒有留下自我介紹唷～') ? selectedMember.bio : '';
+
+        document.getElementById('editModalOverlay').classList.add('active');
+    }
+
+    function closeEditModal() {
+        document.getElementById('editModalOverlay').classList.remove('active');
+    }
+
+    function submitProfileEdit() {
+        if (!currentUserId || !selectedMember) return;
+
+        const res = document.getElementById('editResidence').value.trim();
+        const occ = document.getElementById('editOccupation').value.trim();
+        const rel = document.getElementById('editRelationship').value;
+        const bio = document.getElementById('editBio').value.trim();
+
+        const btn = document.getElementById('btnSaveProfile');
+        btn.disabled = true;
+        btn.textContent = '儲存中...';
+
+        const handleSuccess = function(response) {
+            btn.disabled = false;
+            btn.textContent = '儲存名片';
+
+            if (response && response.success) {
+                // 即時更新內存與 UI
+                selectedMember.residence = (response.updated && response.updated.residence) ? response.updated.residence : (res || '未填寫');
+                selectedMember.occupation = (response.updated && response.updated.occupation) ? response.updated.occupation : (occ || '未填寫');
+                selectedMember.relationship = (response.updated && response.updated.relationship) ? response.updated.relationship : rel;
+                selectedMember.bio = (response.updated && response.updated.bio) ? response.updated.bio : bio;
+
+                document.getElementById('cardResidence').textContent = selectedMember.residence;
+                document.getElementById('cardOccupation').textContent = selectedMember.occupation;
+                document.getElementById('cardRelationship').textContent = selectedMember.relationship;
+                document.getElementById('cardBio').textContent = selectedMember.bio || '這位朋友很神秘，還沒有留下自我介紹唷～';
+
+                closeEditModal();
+                displayFilteredMembers(getCurrentFilteredList());
+
+                Swal.fire({
+                    icon: 'success',
+                    title: '名片更新成功！',
+                    timer: 1500,
+                    showConfirmButton: false,
+                    toast: true,
+                    position: 'top'
+                });
+            } else {
+                Swal.fire('儲存失敗', (response ? response.error : '未知錯誤'), 'error');
+            }
+        };
+
+        const handleError = function(err) {
+            btn.disabled = false;
+            btn.textContent = '儲存名片';
+            Swal.fire('系統錯誤', String(err), 'error');
+        };
+
+        if (window.google && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(handleSuccess)
+                .withFailureHandler(handleError)
+                .apiUpdateMemberProfile(currentUserId, res, occ, rel, bio);
+        } else {
+            // 前端部署於 GitHub Pages 等靜態託管時，透過 fetch 呼叫 GAS 後端 API
+            const payload = {
+                action: 'updateProfile',
+                userId: currentUserId,
+                residence: res,
+                occupation: occ,
+                relationship: rel,
+                bio: bio
+            };
+
+            // 使用 text/plain 避免觸發 OPTIONS CORS preflight，GAS e.postData.contents 正常讀取
+            fetch(GAS_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(handleSuccess)
+            .catch(postErr => {
+                console.warn("POST 儲存受限，嘗試以 GET 模式重試:", postErr);
+                const getUrl = GAS_API_URL + '?action=updateProfile'
+                    + '&userId=' + encodeURIComponent(currentUserId)
+                    + '&residence=' + encodeURIComponent(res)
+                    + '&occupation=' + encodeURIComponent(occ)
+                    + '&relationship=' + encodeURIComponent(rel)
+                    + '&bio=' + encodeURIComponent(bio);
+                fetch(getUrl)
+                    .then(r => r.json())
+                    .then(handleSuccess)
+                    .catch(handleError);
+            });
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+</script>
+
+</body>
+</html>
