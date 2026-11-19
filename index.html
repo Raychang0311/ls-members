@@ -347,6 +347,28 @@
             transform: scale(1) translateY(0);
         }
 
+        /* 個人名片由 WAAPI 精準驅動 0.5s 兩段式浮動與中心擴散動畫 */
+        #profileModalOverlay,
+        #profileModalOverlay .profile-card-modal {
+            transition: none;
+        }
+
+        .floating-avatar-ghost {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #ffffff;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+            z-index: 3005;
+            pointer-events: none;
+            transform-origin: center center;
+            will-change: transform, opacity;
+        }
+
         .modal-header-bg {
             background: linear-gradient(135deg, #3a6e59, #4a8c72, #0D9488);
             padding: 24px 20px 20px;
@@ -477,6 +499,11 @@
         .lightbox-overlay.active img {
             opacity: 1;
             transform: scale(1);
+        }
+
+        #img-lightbox,
+        #img-lightbox img {
+            transition: none;
         }
 
         .lightbox-close-btn {
@@ -879,7 +906,7 @@
         </div>
         <div class="modal-header-bg">
             <button class="modal-close-btn" onclick="closeProfileModal()">✕</button>
-            <img id="cardAvatar" class="modal-avatar" src="" alt="avatar" onclick="showImgLightbox(this.src)" title="點擊放大頭像">
+            <img id="cardAvatar" class="modal-avatar" src="" alt="avatar" onclick="showImgLightbox(this.src, this)" title="點擊放大頭像">
             <div class="modal-user-name" id="cardName">群友名稱</div>
             <div class="modal-user-sub" id="cardJoinDays">已加入 L>S 社群 0 天</div>
             <div class="modal-social-links" id="cardSocialLinks"></div>
@@ -1322,7 +1349,7 @@
             else metaText = `${safeZod}`;
 
             html += `
-            <div class="member-card ${isMe ? 'is-me-card' : ''}" onclick="openProfileModalByUserId('${safeId}')">
+            <div class="member-card ${isMe ? 'is-me-card' : ''}" data-member-id="${safeId}" onclick="openProfileModalByUserId('${safeId}', this)">
                 <div class="avatar-wrap">
                     <img class="member-avatar rainbow-border" src="${escapeHtml(m.pic)}" loading="lazy" onerror="this.src='https://imgur.com/786FxAA.jpg'">
                     ${isMe ? '<div class="my-tag-badge">我</div>' : ''}
@@ -1338,7 +1365,7 @@
         grid.innerHTML = html;
     }
 
-    function openProfileModalByUserId(userId) {
+    function openProfileModalByUserId(userId, sourceEl) {
         if (!userId) return;
         const target = allMembers.find(m => String(m.id).trim().toLowerCase() === String(userId).trim().toLowerCase());
         if (!target) {
@@ -1392,7 +1419,7 @@
         // 身分核對：只有當前登入者等於名片主人時，才開放編輯按鈕
         updateEditButtonVisibility();
 
-        document.getElementById('profileModalOverlay').classList.add('active');
+        animateOpenProfileModal(selectedMember.id, sourceEl);
     }
 
     function updateEditButtonVisibility() {
@@ -1422,9 +1449,317 @@
         }
     }
 
+    let profileAnimState = {
+        token: 0,
+        sourceEl: null,
+        userId: null,
+        animations: [],
+        ghostEl: null,
+        hiddenSourceAvatar: null,
+        isClosing: false
+    };
+
+    function findMemberAvatarElement(userId, sourceEl) {
+        if (sourceEl) {
+            const img = sourceEl.classList.contains('member-avatar')
+                ? sourceEl
+                : sourceEl.querySelector('.member-avatar');
+            if (img) return img;
+        }
+        if (!userId) return null;
+        const targetLower = String(userId).trim().toLowerCase();
+        const candidates = document.querySelectorAll('[data-member-id]');
+        for (let i = 0; i < candidates.length; i++) {
+            if (String(candidates[i].dataset.memberId || '').trim().toLowerCase() === targetLower) {
+                const img = candidates[i].querySelector('.member-avatar');
+                if (img) return img;
+            }
+        }
+        return null;
+    }
+
+    function cleanupProfileAnimations() {
+        profileAnimState.animations.forEach(anim => {
+            try { anim.cancel(); } catch (e) {}
+        });
+        profileAnimState.animations = [];
+        if (profileAnimState.ghostEl && profileAnimState.ghostEl.parentNode) {
+            profileAnimState.ghostEl.parentNode.removeChild(profileAnimState.ghostEl);
+        }
+        profileAnimState.ghostEl = null;
+        if (profileAnimState.hiddenSourceAvatar) {
+            profileAnimState.hiddenSourceAvatar.style.visibility = '';
+            profileAnimState.hiddenSourceAvatar = null;
+        }
+        const cardAvatar = document.getElementById('cardAvatar');
+        if (cardAvatar) cardAvatar.style.visibility = '';
+    }
+
+    function animateOpenProfileModal(userId, sourceEl) {
+        const overlay = document.getElementById('profileModalOverlay');
+        const modal = overlay ? overlay.querySelector('.profile-card-modal') : null;
+        const cardAvatar = document.getElementById('cardAvatar');
+        if (!overlay || !modal || !cardAvatar) return;
+
+        const token = ++profileAnimState.token;
+        profileAnimState.isClosing = false;
+        profileAnimState.userId = userId || null;
+        profileAnimState.sourceEl = sourceEl || null;
+        cleanupProfileAnimations();
+
+        const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!modal.animate || prefersReduced) {
+            overlay.classList.add('active');
+            return;
+        }
+
+        overlay.classList.add('active');
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+        modal.style.opacity = '0';
+        modal.style.transform = 'none';
+        modal.style.clipPath = 'none';
+        cardAvatar.style.visibility = 'hidden';
+
+        const targetRect = cardAvatar.getBoundingClientRect();
+        const sourceAvatar = findMemberAvatarElement(userId, sourceEl);
+        const sourceRect = sourceAvatar ? sourceAvatar.getBoundingClientRect() : null;
+        const hasVisibleSource = !!(
+            sourceRect &&
+            sourceRect.width > 0 &&
+            sourceRect.bottom > 0 &&
+            sourceRect.top < window.innerHeight
+        );
+
+        const midCx = window.innerWidth / 2;
+        const midCy = window.innerHeight / 2;
+        const toCx = targetRect.left + targetRect.width / 2;
+        const toCy = targetRect.top + targetRect.height / 2;
+        const toScale = (targetRect.width || 80) / 80;
+
+        const fromCx = hasVisibleSource ? (sourceRect.left + sourceRect.width / 2) : midCx;
+        const fromCy = hasVisibleSource ? (sourceRect.top + sourceRect.height / 2) : midCy;
+        const fromScale = hasVisibleSource ? ((sourceRect.width || 64) / 80) : 0.6;
+
+        const ghost = document.createElement('img');
+        ghost.className = 'floating-avatar-ghost';
+        ghost.src = (sourceAvatar && (sourceAvatar.currentSrc || sourceAvatar.src)) || cardAvatar.currentSrc || cardAvatar.src;
+        ghost.alt = '';
+        document.body.appendChild(ghost);
+        profileAnimState.ghostEl = ghost;
+
+        if (hasVisibleSource && sourceAvatar) {
+            sourceAvatar.style.visibility = 'hidden';
+            profileAnimState.hiddenSourceAvatar = sourceAvatar;
+        }
+
+        const TOTAL_MS = 500;
+
+        const ghostAnim = ghost.animate([
+            {
+                transform: `translate3d(${fromCx - 40}px, ${fromCy - 40}px, 0) scale(${fromScale})`,
+                opacity: hasVisibleSource ? 1 : 0,
+                offset: 0
+            },
+            {
+                transform: `translate3d(${midCx - 40}px, ${midCy - 40}px, 0) scale(1.1)`,
+                opacity: 1,
+                offset: 0.44,
+                easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+            },
+            {
+                transform: `translate3d(${toCx - 40}px, ${toCy - 40}px, 0) scale(${toScale})`,
+                opacity: 1,
+                offset: 1
+            }
+        ], {
+            duration: TOTAL_MS,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            fill: 'forwards'
+        });
+
+        const overlayAnim = overlay.animate([
+            { backgroundColor: 'rgba(0, 0, 0, 0)', offset: 0 },
+            { backgroundColor: 'rgba(0, 0, 0, 0.38)', offset: 0.44 },
+            { backgroundColor: 'rgba(0, 0, 0, 0.65)', offset: 1 }
+        ], {
+            duration: TOTAL_MS,
+            easing: 'ease-out',
+            fill: 'forwards'
+        });
+
+        const modalAnim = modal.animate([
+            {
+                opacity: 0,
+                clipPath: 'circle(0px at 50% 50%)',
+                transform: 'scale(0.84)',
+                offset: 0
+            },
+            {
+                opacity: 0,
+                clipPath: 'circle(34px at 50% 50%)',
+                transform: 'scale(0.84)',
+                offset: 0.42
+            },
+            {
+                opacity: 1,
+                clipPath: 'circle(44px at 50% 50%)',
+                transform: 'scale(0.88)',
+                offset: 0.48
+            },
+            {
+                opacity: 1,
+                clipPath: 'circle(150% at 50% 50%)',
+                transform: 'scale(1)',
+                offset: 1
+            }
+        ], {
+            duration: TOTAL_MS,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            fill: 'forwards'
+        });
+
+        profileAnimState.animations = [ghostAnim, overlayAnim, modalAnim];
+
+        Promise.all(profileAnimState.animations.map(a => a.finished)).then(() => {
+            if (profileAnimState.token !== token) return;
+            cleanupProfileAnimations();
+            overlay.style.backgroundColor = '';
+            modal.style.opacity = '';
+            modal.style.transform = '';
+            modal.style.clipPath = '';
+        }).catch(() => {});
+    }
+
     function closeProfileModal() {
         hideBadgeTooltip();
-        document.getElementById('profileModalOverlay').classList.remove('active');
+        const overlay = document.getElementById('profileModalOverlay');
+        const modal = overlay ? overlay.querySelector('.profile-card-modal') : null;
+        const cardAvatar = document.getElementById('cardAvatar');
+        if (!overlay || !overlay.classList.contains('active')) return;
+        if (profileAnimState.isClosing) return;
+
+        const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!modal || !cardAvatar || !modal.animate || prefersReduced) {
+            cleanupProfileAnimations();
+            overlay.classList.remove('active');
+            return;
+        }
+
+        const token = ++profileAnimState.token;
+        profileAnimState.isClosing = true;
+        cleanupProfileAnimations();
+
+        const targetRect = cardAvatar.getBoundingClientRect();
+        const destAvatar = findMemberAvatarElement(profileAnimState.userId, profileAnimState.sourceEl);
+        const destRect = destAvatar ? destAvatar.getBoundingClientRect() : null;
+        const hasVisibleDest = !!(
+            destRect &&
+            destRect.width > 0 &&
+            destRect.bottom > 0 &&
+            destRect.top < window.innerHeight
+        );
+
+        const midCx = window.innerWidth / 2;
+        const midCy = window.innerHeight / 2;
+        const startCx = targetRect.left + targetRect.width / 2;
+        const startCy = targetRect.top + targetRect.height / 2;
+        const startScale = (targetRect.width || 80) / 80;
+
+        const endCx = hasVisibleDest ? (destRect.left + destRect.width / 2) : midCx;
+        const endCy = hasVisibleDest ? (destRect.top + destRect.height / 2) : midCy;
+        const endScale = hasVisibleDest ? ((destRect.width || 64) / 80) : 0.6;
+
+        const ghost = document.createElement('img');
+        ghost.className = 'floating-avatar-ghost';
+        ghost.src = cardAvatar.currentSrc || cardAvatar.src;
+        ghost.alt = '';
+        document.body.appendChild(ghost);
+        profileAnimState.ghostEl = ghost;
+
+        cardAvatar.style.visibility = 'hidden';
+        if (hasVisibleDest && destAvatar) {
+            destAvatar.style.visibility = 'hidden';
+            profileAnimState.hiddenSourceAvatar = destAvatar;
+        }
+
+        const TOTAL_MS = 500;
+
+        const modalAnim = modal.animate([
+            {
+                opacity: 1,
+                clipPath: 'circle(150% at 50% 50%)',
+                transform: 'scale(1)',
+                offset: 0
+            },
+            {
+                opacity: 1,
+                clipPath: 'circle(44px at 50% 50%)',
+                transform: 'scale(0.88)',
+                offset: 0.52
+            },
+            {
+                opacity: 0,
+                clipPath: 'circle(34px at 50% 50%)',
+                transform: 'scale(0.84)',
+                offset: 0.58
+            },
+            {
+                opacity: 0,
+                clipPath: 'circle(0px at 50% 50%)',
+                transform: 'scale(0.84)',
+                offset: 1
+            }
+        ], {
+            duration: TOTAL_MS,
+            easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+            fill: 'forwards'
+        });
+
+        const ghostAnim = ghost.animate([
+            {
+                transform: `translate3d(${startCx - 40}px, ${startCy - 40}px, 0) scale(${startScale})`,
+                opacity: 1,
+                offset: 0
+            },
+            {
+                transform: `translate3d(${midCx - 40}px, ${midCy - 40}px, 0) scale(1.1)`,
+                opacity: 1,
+                offset: 0.56,
+                easing: 'cubic-bezier(0.4, 0, 0.2, 1)'
+            },
+            {
+                transform: `translate3d(${endCx - 40}px, ${endCy - 40}px, 0) scale(${endScale})`,
+                opacity: hasVisibleDest ? 1 : 0,
+                offset: 1
+            }
+        ], {
+            duration: TOTAL_MS,
+            easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+            fill: 'forwards'
+        });
+
+        const overlayAnim = overlay.animate([
+            { backgroundColor: 'rgba(0, 0, 0, 0.65)', offset: 0 },
+            { backgroundColor: 'rgba(0, 0, 0, 0.38)', offset: 0.56 },
+            { backgroundColor: 'rgba(0, 0, 0, 0)', offset: 1 }
+        ], {
+            duration: TOTAL_MS,
+            easing: 'ease-in',
+            fill: 'forwards'
+        });
+
+        profileAnimState.animations = [modalAnim, ghostAnim, overlayAnim];
+
+        Promise.all(profileAnimState.animations.map(a => a.finished)).then(() => {
+            if (profileAnimState.token !== token) return;
+            profileAnimState.isClosing = false;
+            cleanupProfileAnimations();
+            overlay.classList.remove('active');
+            overlay.style.backgroundColor = '';
+            modal.style.opacity = '';
+            modal.style.transform = '';
+            modal.style.clipPath = '';
+        }).catch(() => {});
     }
 
     function handleCardClick(event) {
@@ -1816,18 +2151,141 @@
         window.open(targetUrl, '_blank', 'noopener,noreferrer');
     }
 
-    function showImgLightbox(imageUrl) {
+    let imgLightboxAnimState = {
+        token: 0,
+        animations: [],
+        sourceEl: null,
+        isClosing: false
+    };
+
+    function cleanupImgLightboxAnims() {
+        imgLightboxAnimState.animations.forEach(a => {
+            try { a.cancel(); } catch (e) {}
+        });
+        imgLightboxAnimState.animations = [];
+    }
+
+    function showImgLightbox(imageUrl, sourceEl) {
         if (!imageUrl) return;
         const lightbox = document.getElementById('img-lightbox');
         const img = document.getElementById('lightbox-image');
         if (!lightbox || !img) return;
+
+        const token = ++imgLightboxAnimState.token;
+        imgLightboxAnimState.isClosing = false;
+        imgLightboxAnimState.sourceEl = sourceEl || document.getElementById('cardAvatar');
+        cleanupImgLightboxAnims();
+
+        const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         img.src = imageUrl;
         lightbox.classList.add('active');
+
+        if (!img.animate || prefersReduced) {
+            img.style.opacity = '';
+            img.style.transform = '';
+            return;
+        }
+
+        img.style.opacity = '0';
+
+        const startAnim = () => {
+            if (imgLightboxAnimState.token !== token) return;
+            img.style.transform = 'none';
+            img.style.opacity = '1';
+            const toRect = img.getBoundingClientRect();
+            const fromRect = imgLightboxAnimState.sourceEl ? imgLightboxAnimState.sourceEl.getBoundingClientRect() : null;
+
+            if (!fromRect || !toRect || toRect.width === 0 || fromRect.width === 0) {
+                const imgAnim = img.animate([
+                    { opacity: 0, transform: 'scale(0.75)' },
+                    { opacity: 1, transform: 'scale(1)' }
+                ], { duration: 350, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+                imgLightboxAnimState.animations = [imgAnim];
+                return;
+            }
+
+            const dx = (fromRect.left + fromRect.width / 2) - (toRect.left + toRect.width / 2);
+            const dy = (fromRect.top + fromRect.height / 2) - (toRect.top + toRect.height / 2);
+            const startScale = Math.min(fromRect.width / toRect.width, fromRect.height / toRect.height);
+
+            const bgAnim = lightbox.animate([
+                { backgroundColor: 'rgba(0, 0, 0, 0)' },
+                { backgroundColor: 'rgba(0, 0, 0, 0.85)' }
+            ], { duration: 350, easing: 'ease-out', fill: 'forwards' });
+
+            const imgAnim = img.animate([
+                { transform: `translate3d(${dx}px, ${dy}px, 0) scale(${startScale})`, borderRadius: '50%', opacity: 0.75 },
+                { transform: 'translate3d(0, 0, 0) scale(1)', borderRadius: '14px', opacity: 1 }
+            ], { duration: 380, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+
+            imgLightboxAnimState.animations = [bgAnim, imgAnim];
+            Promise.all(imgLightboxAnimState.animations.map(a => a.finished)).then(() => {
+                if (imgLightboxAnimState.token !== token) return;
+                cleanupImgLightboxAnims();
+                img.style.transform = '';
+                img.style.opacity = '';
+            }).catch(() => {});
+        };
+
+        if (img.complete && img.naturalWidth > 0) {
+            startAnim();
+        } else {
+            img.onload = () => {
+                img.onload = null;
+                startAnim();
+            };
+        }
     }
 
     function closeImgLightbox() {
         const lightbox = document.getElementById('img-lightbox');
-        if (lightbox) lightbox.classList.remove('active');
+        const img = document.getElementById('lightbox-image');
+        if (!lightbox || !lightbox.classList.contains('active') || imgLightboxAnimState.isClosing) return;
+
+        const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!img || !img.animate || prefersReduced) {
+            cleanupImgLightboxAnims();
+            lightbox.classList.remove('active');
+            return;
+        }
+
+        const token = ++imgLightboxAnimState.token;
+        imgLightboxAnimState.isClosing = true;
+        cleanupImgLightboxAnims();
+
+        const toRect = img.getBoundingClientRect();
+        const targetEl = imgLightboxAnimState.sourceEl || document.getElementById('cardAvatar');
+        const fromRect = targetEl ? targetEl.getBoundingClientRect() : null;
+
+        let endTransform = 'scale(0.75)';
+        let endRadius = '14px';
+        if (fromRect && toRect && toRect.width > 0 && fromRect.width > 0) {
+            const dx = (fromRect.left + fromRect.width / 2) - (toRect.left + toRect.width / 2);
+            const dy = (fromRect.top + fromRect.height / 2) - (toRect.top + toRect.height / 2);
+            const endScale = Math.min(fromRect.width / toRect.width, fromRect.height / toRect.height);
+            endTransform = `translate3d(${dx}px, ${dy}px, 0) scale(${endScale})`;
+            endRadius = '50%';
+        }
+
+        const bgAnim = lightbox.animate([
+            { backgroundColor: 'rgba(0, 0, 0, 0.85)' },
+            { backgroundColor: 'rgba(0, 0, 0, 0)' }
+        ], { duration: 300, easing: 'ease-in', fill: 'forwards' });
+
+        const imgAnim = img.animate([
+            { transform: 'translate3d(0, 0, 0) scale(1)', borderRadius: '14px', opacity: 1 },
+            { transform: endTransform, borderRadius: endRadius, opacity: 0 }
+        ], { duration: 300, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' });
+
+        imgLightboxAnimState.animations = [bgAnim, imgAnim];
+        Promise.all(imgLightboxAnimState.animations.map(a => a.finished)).then(() => {
+            if (imgLightboxAnimState.token !== token) return;
+            imgLightboxAnimState.isClosing = false;
+            cleanupImgLightboxAnims();
+            lightbox.classList.remove('active');
+            img.style.transform = '';
+            img.style.opacity = '';
+        }).catch(() => {});
     }
 
     document.addEventListener('keydown', function(e) {
