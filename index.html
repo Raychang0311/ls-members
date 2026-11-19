@@ -347,10 +347,18 @@
             transform: scale(1) translateY(0);
         }
 
-        /* 個人名片由 WAAPI 精準驅動 1s 兩段式浮動與中心擴散動畫 */
+        /* 個人名片由 WAAPI 精準驅動兩段式浮動與 0.3s 中心擴散動畫 */
         #profileModalOverlay,
         #profileModalOverlay .profile-card-modal {
             transition: none;
+        }
+
+        #profileModalOverlay {
+            backdrop-filter: none;
+        }
+
+        #profileModalOverlay.blur-ready {
+            backdrop-filter: blur(3px);
         }
 
         .floating-avatar-ghost {
@@ -1509,18 +1517,10 @@
 
         const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (!modal.animate || prefersReduced) {
-            overlay.classList.add('active');
+            overlay.classList.add('active', 'blur-ready');
             return;
         }
 
-        overlay.classList.add('active');
-        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
-        modal.style.opacity = '0';
-        modal.style.transform = 'none';
-        modal.style.clipPath = 'none';
-        cardAvatar.style.visibility = 'hidden';
-
-        const targetRect = cardAvatar.getBoundingClientRect();
         const sourceAvatar = findMemberAvatarElement(userId, sourceEl);
         const sourceRect = sourceAvatar ? sourceAvatar.getBoundingClientRect() : null;
         const hasVisibleSource = !!(
@@ -1529,6 +1529,20 @@
             sourceRect.bottom > 0 &&
             sourceRect.top < window.innerHeight
         );
+
+        // 先量測目標名片與頭像座標（保持 modal 不可見，避免首幀搶佔合成資源）
+        overlay.classList.remove('blur-ready');
+        overlay.classList.add('active');
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0)';
+        modal.style.visibility = 'hidden';
+        modal.style.opacity = '0';
+        modal.style.transform = 'none';
+        modal.style.clipPath = 'none';
+        cardAvatar.style.visibility = 'hidden';
+
+        const modalRect = modal.getBoundingClientRect();
+        const targetRect = cardAvatar.getBoundingClientRect();
+        const maxRadius = Math.ceil(Math.hypot(modalRect.width / 2, modalRect.height / 2)) + 8;
 
         const midCx = window.innerWidth / 2;
         const midCy = window.innerHeight / 2;
@@ -1544,6 +1558,8 @@
         ghost.className = 'floating-avatar-ghost';
         ghost.src = (sourceAvatar && (sourceAvatar.currentSrc || sourceAvatar.src)) || cardAvatar.currentSrc || cardAvatar.src;
         ghost.alt = '';
+        ghost.style.transform = `translate3d(${fromCx - 40}px, ${fromCy - 40}px, 0) scale(${fromScale})`;
+        ghost.style.opacity = hasVisibleSource ? '1' : '0';
         document.body.appendChild(ghost);
         profileAnimState.ghostEl = ghost;
 
@@ -1552,82 +1568,101 @@
             profileAnimState.hiddenSourceAvatar = sourceAvatar;
         }
 
-        const TOTAL_MS = 1000;
+        const FLOAT_MS = 700;
+        const EXPAND_MS = 300;
 
-        const ghostAnim = ghost.animate([
-            {
-                transform: `translate3d(${fromCx - 40}px, ${fromCy - 40}px, 0) scale(${fromScale})`,
-                opacity: hasVisibleSource ? 1 : 0,
-                offset: 0
-            },
-            {
-                transform: `translate3d(${midCx - 40}px, ${midCy - 40}px, 0) scale(1.1)`,
-                opacity: 1,
-                offset: 0.44,
-                easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
-            },
-            {
-                transform: `translate3d(${toCx - 40}px, ${toCy - 40}px, 0) scale(${toScale})`,
-                opacity: 1,
-                offset: 1
-            }
-        ], {
-            duration: TOTAL_MS,
-            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-            fill: 'forwards'
-        });
-
-        const overlayAnim = overlay.animate([
-            { backgroundColor: 'rgba(0, 0, 0, 0)', offset: 0 },
-            { backgroundColor: 'rgba(0, 0, 0, 0.38)', offset: 0.44 },
-            { backgroundColor: 'rgba(0, 0, 0, 0.65)', offset: 1 }
-        ], {
-            duration: TOTAL_MS,
-            easing: 'ease-out',
-            fill: 'forwards'
-        });
-
-        const modalAnim = modal.animate([
-            {
-                opacity: 0,
-                clipPath: 'circle(0px at 50% 50%)',
-                transform: 'scale(0.84)',
-                offset: 0
-            },
-            {
-                opacity: 0,
-                clipPath: 'circle(34px at 50% 50%)',
-                transform: 'scale(0.84)',
-                offset: 0.42
-            },
-            {
-                opacity: 1,
-                clipPath: 'circle(44px at 50% 50%)',
-                transform: 'scale(0.88)',
-                offset: 0.48
-            },
-            {
-                opacity: 1,
-                clipPath: 'circle(150% at 50% 50%)',
-                transform: 'scale(1)',
-                offset: 1
-            }
-        ], {
-            duration: TOTAL_MS,
-            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-            fill: 'forwards'
-        });
-
-        profileAnimState.animations = [ghostAnim, overlayAnim, modalAnim];
-
-        Promise.all(profileAnimState.animations.map(a => a.finished)).then(() => {
+        // 等一幀確保 ghost 已完成圖層合成，再啟動流暢位移
+        requestAnimationFrame(() => {
             if (profileAnimState.token !== token) return;
-            cleanupProfileAnimations();
-            overlay.style.backgroundColor = '';
-            modal.style.opacity = '';
-            modal.style.transform = '';
-            modal.style.clipPath = '';
-        }).catch(() => {});
+
+            const ghostFloatAnim = ghost.animate([
+                {
+                    transform: `translate3d(${fromCx - 40}px, ${fromCy - 40}px, 0) scale(${fromScale})`,
+                    opacity: hasVisibleSource ? 1 : 0,
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)'
+                },
+                {
+                    transform: `translate3d(${midCx - 40}px, ${midCy - 40}px, 0) scale(1.12)`,
+                    opacity: 1,
+                    boxShadow: '0 14px 32px rgba(0, 0, 0, 0.34)'
+                }
+            ], {
+                duration: FLOAT_MS,
+                easing: 'cubic-bezier(0.35, 0.15, 0.25, 1)',
+                fill: 'forwards'
+            });
+
+            const overlayFloatAnim = overlay.animate([
+                { backgroundColor: 'rgba(0, 0, 0, 0)' },
+                { backgroundColor: 'rgba(0, 0, 0, 0.42)' }
+            ], {
+                duration: FLOAT_MS,
+                easing: 'ease-out',
+                fill: 'forwards'
+            });
+
+            profileAnimState.animations = [ghostFloatAnim, overlayFloatAnim];
+
+            Promise.all([ghostFloatAnim.finished, overlayFloatAnim.finished]).then(() => {
+                if (profileAnimState.token !== token) return;
+
+                modal.style.visibility = 'visible';
+
+                const ghostSettleAnim = ghost.animate([
+                    {
+                        transform: `translate3d(${midCx - 40}px, ${midCy - 40}px, 0) scale(1.12)`,
+                        boxShadow: '0 14px 32px rgba(0, 0, 0, 0.34)'
+                    },
+                    {
+                        transform: `translate3d(${toCx - 40}px, ${toCy - 40}px, 0) scale(${toScale})`,
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                    }
+                ], {
+                    duration: EXPAND_MS,
+                    easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+                    fill: 'forwards'
+                });
+
+                const overlayExpandAnim = overlay.animate([
+                    { backgroundColor: 'rgba(0, 0, 0, 0.42)' },
+                    { backgroundColor: 'rgba(0, 0, 0, 0.65)' }
+                ], {
+                    duration: EXPAND_MS,
+                    easing: 'ease-out',
+                    fill: 'forwards'
+                });
+
+                const modalExpandAnim = modal.animate([
+                    {
+                        opacity: 0.25,
+                        clipPath: 'circle(38px at 50% 50%)',
+                        transform: 'scale(0.88)'
+                    },
+                    {
+                        opacity: 1,
+                        clipPath: `circle(${maxRadius}px at 50% 50%)`,
+                        transform: 'scale(1)'
+                    }
+                ], {
+                    duration: EXPAND_MS,
+                    easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+                    fill: 'forwards'
+                });
+
+                profileAnimState.animations = [ghostSettleAnim, overlayExpandAnim, modalExpandAnim];
+
+                Promise.all(profileAnimState.animations.map(a => a.finished)).then(() => {
+                    if (profileAnimState.token !== token) return;
+                    cleanupProfileAnimations();
+                    overlay.classList.add('blur-ready');
+                    overlay.style.backgroundColor = '';
+                    modal.style.visibility = '';
+                    modal.style.opacity = '';
+                    modal.style.transform = '';
+                    modal.style.clipPath = '';
+                }).catch(() => {});
+            }).catch(() => {});
+        });
     }
 
     function closeProfileModal() {
@@ -1637,6 +1672,8 @@
         const cardAvatar = document.getElementById('cardAvatar');
         if (!overlay || !overlay.classList.contains('active')) return;
         if (profileAnimState.isClosing) return;
+
+        overlay.classList.remove('blur-ready');
 
         const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (!modal || !cardAvatar || !modal.animate || prefersReduced) {
@@ -1649,6 +1686,8 @@
         profileAnimState.isClosing = true;
         cleanupProfileAnimations();
 
+        const modalRect = modal.getBoundingClientRect();
+        const maxRadius = Math.ceil(Math.hypot(modalRect.width / 2, modalRect.height / 2)) + 8;
         const targetRect = cardAvatar.getBoundingClientRect();
         const destAvatar = findMemberAvatarElement(profileAnimState.userId, profileAnimState.sourceEl);
         const destRect = destAvatar ? destAvatar.getBoundingClientRect() : null;
@@ -1673,6 +1712,7 @@
         ghost.className = 'floating-avatar-ghost';
         ghost.src = cardAvatar.currentSrc || cardAvatar.src;
         ghost.alt = '';
+        ghost.style.transform = `translate3d(${startCx - 40}px, ${startCy - 40}px, 0) scale(${startScale})`;
         document.body.appendChild(ghost);
         profileAnimState.ghostEl = ghost;
 
@@ -1682,83 +1722,96 @@
             profileAnimState.hiddenSourceAvatar = destAvatar;
         }
 
-        const TOTAL_MS = 1000;
+        const COLLAPSE_MS = 300;
+        const RETURN_MS = 700;
 
-        const modalAnim = modal.animate([
+        const modalCollapseAnim = modal.animate([
             {
                 opacity: 1,
-                clipPath: 'circle(150% at 50% 50%)',
-                transform: 'scale(1)',
-                offset: 0
+                clipPath: `circle(${maxRadius}px at 50% 50%)`,
+                transform: 'scale(1)'
             },
             {
-                opacity: 1,
-                clipPath: 'circle(44px at 50% 50%)',
-                transform: 'scale(0.88)',
-                offset: 0.52
-            },
-            {
-                opacity: 0,
-                clipPath: 'circle(34px at 50% 50%)',
-                transform: 'scale(0.84)',
-                offset: 0.58
-            },
-            {
-                opacity: 0,
-                clipPath: 'circle(0px at 50% 50%)',
-                transform: 'scale(0.84)',
-                offset: 1
+                opacity: 0.15,
+                clipPath: 'circle(38px at 50% 50%)',
+                transform: 'scale(0.88)'
             }
         ], {
-            duration: TOTAL_MS,
-            easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+            duration: COLLAPSE_MS,
+            easing: 'cubic-bezier(0.4, 0, 1, 1)',
             fill: 'forwards'
         });
 
-        const ghostAnim = ghost.animate([
+        const ghostCenterAnim = ghost.animate([
             {
                 transform: `translate3d(${startCx - 40}px, ${startCy - 40}px, 0) scale(${startScale})`,
-                opacity: 1,
-                offset: 0
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
             },
             {
-                transform: `translate3d(${midCx - 40}px, ${midCy - 40}px, 0) scale(1.1)`,
-                opacity: 1,
-                offset: 0.56,
-                easing: 'cubic-bezier(0.4, 0, 0.2, 1)'
-            },
-            {
-                transform: `translate3d(${endCx - 40}px, ${endCy - 40}px, 0) scale(${endScale})`,
-                opacity: hasVisibleDest ? 1 : 0,
-                offset: 1
+                transform: `translate3d(${midCx - 40}px, ${midCy - 40}px, 0) scale(1.12)`,
+                boxShadow: '0 14px 32px rgba(0, 0, 0, 0.34)'
             }
         ], {
-            duration: TOTAL_MS,
+            duration: COLLAPSE_MS,
             easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
             fill: 'forwards'
         });
 
-        const overlayAnim = overlay.animate([
-            { backgroundColor: 'rgba(0, 0, 0, 0.65)', offset: 0 },
-            { backgroundColor: 'rgba(0, 0, 0, 0.38)', offset: 0.56 },
-            { backgroundColor: 'rgba(0, 0, 0, 0)', offset: 1 }
+        const overlayCollapseAnim = overlay.animate([
+            { backgroundColor: 'rgba(0, 0, 0, 0.65)' },
+            { backgroundColor: 'rgba(0, 0, 0, 0.42)' }
         ], {
-            duration: TOTAL_MS,
+            duration: COLLAPSE_MS,
             easing: 'ease-in',
             fill: 'forwards'
         });
 
-        profileAnimState.animations = [modalAnim, ghostAnim, overlayAnim];
+        profileAnimState.animations = [modalCollapseAnim, ghostCenterAnim, overlayCollapseAnim];
 
         Promise.all(profileAnimState.animations.map(a => a.finished)).then(() => {
             if (profileAnimState.token !== token) return;
-            profileAnimState.isClosing = false;
-            cleanupProfileAnimations();
-            overlay.classList.remove('active');
-            overlay.style.backgroundColor = '';
-            modal.style.opacity = '';
-            modal.style.transform = '';
-            modal.style.clipPath = '';
+
+            modal.style.visibility = 'hidden';
+
+            const ghostReturnAnim = ghost.animate([
+                {
+                    transform: `translate3d(${midCx - 40}px, ${midCy - 40}px, 0) scale(1.12)`,
+                    opacity: 1,
+                    boxShadow: '0 14px 32px rgba(0, 0, 0, 0.34)'
+                },
+                {
+                    transform: `translate3d(${endCx - 40}px, ${endCy - 40}px, 0) scale(${endScale})`,
+                    opacity: hasVisibleDest ? 1 : 0,
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)'
+                }
+            ], {
+                duration: RETURN_MS,
+                easing: 'cubic-bezier(0.35, 0.15, 0.25, 1)',
+                fill: 'forwards'
+            });
+
+            const overlayFadeAnim = overlay.animate([
+                { backgroundColor: 'rgba(0, 0, 0, 0.42)' },
+                { backgroundColor: 'rgba(0, 0, 0, 0)' }
+            ], {
+                duration: RETURN_MS,
+                easing: 'ease-in-out',
+                fill: 'forwards'
+            });
+
+            profileAnimState.animations = [ghostReturnAnim, overlayFadeAnim];
+
+            Promise.all(profileAnimState.animations.map(a => a.finished)).then(() => {
+                if (profileAnimState.token !== token) return;
+                profileAnimState.isClosing = false;
+                cleanupProfileAnimations();
+                overlay.classList.remove('active', 'blur-ready');
+                overlay.style.backgroundColor = '';
+                modal.style.visibility = '';
+                modal.style.opacity = '';
+                modal.style.transform = '';
+                modal.style.clipPath = '';
+            }).catch(() => {});
         }).catch(() => {});
     }
 
