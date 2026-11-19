@@ -187,7 +187,7 @@
             pointer-events: none;
         }
 
-        /* 成員列表網格 */
+        /* 群友列表網格 */
         .member-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -302,7 +302,9 @@
 
         /* 通用 Lightbox 遮罩 */
         .modal-overlay {
-            display: none;
+            display: flex;
+            visibility: hidden;
+            pointer-events: none;
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.65);
@@ -312,12 +314,14 @@
             padding: 16px;
             backdrop-filter: blur(3px);
             opacity: 0;
-            transition: opacity 0.25s ease;
+            transition: opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.28s;
         }
 
         .modal-overlay.active {
-            display: flex;
+            visibility: visible;
+            pointer-events: auto;
             opacity: 1;
+            transition: opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0s;
         }
 
         /* 個人名片 Modal */
@@ -329,15 +333,18 @@
             border-radius: 20px;
             overflow: hidden;
             box-shadow: 0 12px 35px rgba(0,0,0,0.25);
-            transform: scale(0.92);
-            transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            opacity: 0;
+            transform: scale(0.9) translateY(16px);
+            transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease;
+            will-change: transform, opacity;
             max-height: 90vh;
             display: flex;
             flex-direction: column;
         }
 
         .modal-overlay.active .profile-card-modal {
-            transform: scale(1);
+            opacity: 1;
+            transform: scale(1) translateY(0);
         }
 
         .modal-header-bg {
@@ -433,7 +440,9 @@
 
         /* 頭像放大檢視 Lightbox */
         .lightbox-overlay {
-            display: none;
+            display: flex;
+            visibility: hidden;
+            pointer-events: none;
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.85);
@@ -443,12 +452,14 @@
             padding: 20px;
             backdrop-filter: blur(4px);
             opacity: 0;
-            transition: opacity 0.25s ease;
+            transition: opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.26s;
         }
 
         .lightbox-overlay.active {
-            display: flex;
+            visibility: visible;
+            pointer-events: auto;
             opacity: 1;
+            transition: opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0s;
         }
 
         .lightbox-overlay img {
@@ -456,12 +467,15 @@
             max-height: 82vh;
             border-radius: 14px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-            transform: scale(0.92);
-            transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            opacity: 0;
+            transform: scale(0.78);
+            transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease;
+            will-change: transform, opacity;
             object-fit: contain;
         }
 
         .lightbox-overlay.active img {
+            opacity: 1;
             transform: scale(1);
         }
 
@@ -827,7 +841,7 @@
 
 <div id="loading">
     <div class="spinner"></div>
-    <p style="margin-top: 12px; color: #4b5563; font-weight: 500;">載入成員名冊中...</p>
+    <p style="margin-top: 12px; color: #4b5563; font-weight: 500;">載入群友名冊中...</p>
 </div>
 
 <div class="container">
@@ -835,7 +849,7 @@
         <div class="header-title-row">
             <div class="header-title">
                 <span>🌈</span>
-                <span>L>S 成員名冊</span>
+                <span>L>S 群友名冊</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <div class="auth-pill guest" id="authPill" onclick="handleAuthClick()">身分驗證中...</div>
@@ -848,7 +862,7 @@
     </div>
 
     <div class="member-grid" id="memberGrid">
-        <!-- 動態渲染成員卡片 -->
+        <!-- 動態渲染群友卡片 -->
     </div>
 </div>
 
@@ -866,7 +880,7 @@
         <div class="modal-header-bg">
             <button class="modal-close-btn" onclick="closeProfileModal()">✕</button>
             <img id="cardAvatar" class="modal-avatar" src="" alt="avatar" onclick="showImgLightbox(this.src)" title="點擊放大頭像">
-            <div class="modal-user-name" id="cardName">成員名稱</div>
+            <div class="modal-user-name" id="cardName">群友名稱</div>
             <div class="modal-user-sub" id="cardJoinDays">已加入 L>S 社群 0 天</div>
             <div class="modal-social-links" id="cardSocialLinks"></div>
         </div>
@@ -1074,7 +1088,7 @@
         // 1. 初始化身分認證 (多重架構：後端注入 + Context + ID Token + Profile + 本地持久化)
         initLiffAuth();
 
-        // 2. 載入成員名冊
+        // 2. 載入群友名冊
         loadMembersDirectory();
 
         // 3. 綁定卡片滾動監聽以自動隱藏稱號 Tooltip
@@ -1094,7 +1108,7 @@
         // 1. 檢查 GAS 後端 doGet(e) 伺服器端注入之 User ID (若存在)
         if (typeof window.SERVER_USER_ID !== 'undefined' && window.SERVER_USER_ID && window.SERVER_USER_ID.trim()) {
             liffDiag.serverUserId = window.SERVER_USER_ID.trim();
-            handleLoginSuccess(liffDiag.serverUserId, '已驗證成員');
+            handleLoginSuccess(liffDiag.serverUserId, '已驗證群友');
         }
 
         // 2. 檢查 localStorage 本地持久化記錄 (僅作為快速載入快取)
@@ -1103,7 +1117,7 @@
             const cachedName = localStorage.getItem('ls_member_name');
             if (cachedUid && !currentUserId) {
                 liffDiag.localUserId = cachedUid;
-                handleLoginSuccess(cachedUid, cachedName || '社群成員');
+                handleLoginSuccess(cachedUid, cachedName || '社群群友');
             }
         } catch (e) {}
 
@@ -1132,7 +1146,7 @@
                         const context = liff.getContext();
                         if (context && context.userId) {
                             liffDiag.contextUserId = context.userId;
-                            handleLoginSuccess(context.userId, 'LINE 成員');
+                            handleLoginSuccess(context.userId, 'LINE 群友');
                         }
                     } catch (e) {}
                 } else {
@@ -1153,9 +1167,9 @@
         if (!userId) return;
         currentUserId = String(userId).trim();
 
-        // 嘗試在全體成員清單中尋找真實姓名
+        // 嘗試在全體群友清單中尋找真實姓名
         let matchedMember = allMembers.find(m => String(m.id).trim().toLowerCase() === currentUserId.toLowerCase());
-        currentDisplayName = (matchedMember && matchedMember.name) ? matchedMember.name : (displayName || '已登入成員');
+        currentDisplayName = (matchedMember && matchedMember.name) ? matchedMember.name : (displayName || '已登入群友');
 
         console.log("LINE 認證成功:", currentUserId, currentDisplayName);
 
@@ -1167,7 +1181,7 @@
 
         updateAuthUI(true, currentDisplayName);
 
-        // 若成員名冊已載入，重新渲染以標記「我」卡片
+        // 若群友名冊已載入，重新渲染以標記「我」卡片
         if (allMembers && allMembers.length > 0) {
             displayFilteredMembers(getCurrentFilteredList());
         }
@@ -1219,7 +1233,7 @@
                 .withSuccessHandler(renderDirectory)
                 .withFailureHandler(err => {
                     document.getElementById('loading').style.display = 'none';
-                    Swal.fire('錯誤', '載入成員名冊失敗：' + err, 'error');
+                    Swal.fire('錯誤', '載入群友名冊失敗：' + err, 'error');
                 })
                 .getMembersDirectory();
             return;
@@ -1253,7 +1267,7 @@
     function renderDirectory(res) {
         document.getElementById('loading').style.display = 'none';
         if (!res || !res.success || !res.members) {
-            document.getElementById('memberGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:40px 0;">暫無成員資料</div>';
+            document.getElementById('memberGrid').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:40px 0;">暫無群友資料</div>';
             return;
         }
 
@@ -1287,7 +1301,7 @@
     function displayFilteredMembers(list) {
         const grid = document.getElementById('memberGrid');
         if (!list || list.length === 0) {
-            grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:40px 0;">查無符合條件的成員</div>';
+            grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:40px 0;">查無符合條件的群友</div>';
             return;
         }
 
@@ -1328,7 +1342,7 @@
         if (!userId) return;
         const target = allMembers.find(m => String(m.id).trim().toLowerCase() === String(userId).trim().toLowerCase());
         if (!target) {
-            Swal.fire('提示', '找不到該成員的詳細資料', 'warning');
+            Swal.fire('提示', '找不到該群友的詳細資料', 'warning');
             return;
         }
         selectedMember = target;
