@@ -347,7 +347,7 @@
             transform: scale(1) translateY(0);
         }
 
-        /* 個人名片由 WAAPI 精準驅動 0.5s 兩段式浮動與中心擴散動畫 */
+        /* 個人名片由 WAAPI 精準驅動 1s 兩段式浮動與中心擴散動畫 */
         #profileModalOverlay,
         #profileModalOverlay .profile-card-modal {
             transition: none;
@@ -1552,7 +1552,7 @@
             profileAnimState.hiddenSourceAvatar = sourceAvatar;
         }
 
-        const TOTAL_MS = 500;
+        const TOTAL_MS = 1000;
 
         const ghostAnim = ghost.animate([
             {
@@ -1682,7 +1682,7 @@
             profileAnimState.hiddenSourceAvatar = destAvatar;
         }
 
-        const TOTAL_MS = 500;
+        const TOTAL_MS = 1000;
 
         const modalAnim = modal.animate([
             {
