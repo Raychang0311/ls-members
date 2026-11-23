@@ -698,6 +698,98 @@
             white-space: nowrap;
         }
 
+        .info-cell-val.is-empty {
+            color: var(--text-sub);
+            font-weight: 500;
+        }
+
+        .info-cell-val-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .admin-only-tag {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: #0f766e;
+            background: #ccfbf1;
+            border: 1px solid #99f6e4;
+            padding: 0 5px;
+            border-radius: 6px;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+
+        .btn-inline-edit {
+            flex-shrink: 0;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #475569;
+            font-size: 0.72rem;
+            line-height: 1;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+            padding: 0;
+        }
+
+        .btn-inline-edit:hover, .btn-inline-edit:active {
+            background: var(--primary-light);
+            border-color: var(--primary);
+            transform: scale(1.08);
+        }
+
+        .swal2-container {
+            z-index: 5000 !important;
+        }
+
+        .bday-select-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .bday-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            background: #ffffff;
+            color: var(--text-main);
+            outline: none;
+        }
+
+        .bday-select:focus {
+            border-color: var(--primary);
+        }
+
+        .btn-clear-bday {
+            margin-top: 10px;
+            background: #f3f4f6;
+            color: #4b5563;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .btn-clear-bday:hover {
+            background: #e5e7eb;
+        }
+
         /* 自我介紹區 */
         .bio-box {
             background: #f0fdf4;
@@ -920,8 +1012,15 @@
             <div class="modal-social-links" id="cardSocialLinks"></div>
         </div>
         <div class="modal-body">
-            <!-- 資訊網格 (年齡、星座、居住地、職業、感情狀態、入群日期) -->
+            <!-- 資訊網格 (管理群專屬生日、年齡、星座、居住地、職業、感情狀態、入群日期) -->
             <div class="info-grid">
+                <div class="info-cell" id="cardBirthdayCell" style="display: none;">
+                    <span class="info-cell-title">🎁 生日<span class="admin-only-tag">管理群</span></span>
+                    <div class="info-cell-val-row">
+                        <span class="info-cell-val" id="cardBirthday">未填寫</span>
+                        <button type="button" class="btn-inline-edit" id="btnEditBirthday" onclick="openEditBirthdayDialog(event)" title="修改生日" aria-label="修改生日">✏️</button>
+                    </div>
+                </div>
                 <div class="info-cell">
                     <span class="info-cell-title">🎂 年齡</span>
                     <span class="info-cell-val" id="cardAge">秘密 🤫</span>
@@ -942,7 +1041,7 @@
                     <span class="info-cell-title">💖 感情狀態</span>
                     <span class="info-cell-val" id="cardRelationship">單身</span>
                 </div>
-                <div class="info-cell">
+                <div class="info-cell" id="cardJoinDateCell">
                     <span class="info-cell-title">📅 入群日期</span>
                     <span class="info-cell-val" id="cardJoinDate">2022-03-15</span>
                 </div>
@@ -1104,6 +1203,8 @@
     let currentDisplayName = null;
     let selectedMember = null;
     let serverTitleConfig = null;
+    let isCurrentUserAdmin = false;
+    let directoryLoadedUserId = null;
 
     let liffDiag = {
         sdkLoaded: false,
@@ -1225,6 +1326,12 @@
         if (selectedMember) {
             updateEditButtonVisibility();
         }
+
+        // 若此前名冊是以不同身分（如訪客）載入，靜默重拉以檢查管理群權限與生日資料
+        const normalizedUid = currentUserId.toLowerCase();
+        if (directoryLoadedUserId !== null && directoryLoadedUserId !== normalizedUid) {
+            loadMembersDirectory(true);
+        }
     }
 
     function updateAuthUI(isLoggedIn, displayName) {
@@ -1262,15 +1369,18 @@
         window.location.href = liffUrl;
     }
 
-    function loadMembersDirectory() {
+    function loadMembersDirectory(silent) {
+        const requestUid = currentUserId ? String(currentUserId).trim() : '';
+        directoryLoadedUserId = requestUid.toLowerCase();
+
         if (window.google && google.script && google.script.run) {
             google.script.run
                 .withSuccessHandler(renderDirectory)
                 .withFailureHandler(err => {
                     document.getElementById('loading').style.display = 'none';
-                    Swal.fire('錯誤', '載入群友名冊失敗：' + err, 'error');
+                    if (!silent) Swal.fire('錯誤', '載入群友名冊失敗：' + err, 'error');
                 })
-                .getMembersDirectory();
+                .getMembersDirectory(requestUid);
             return;
         }
 
@@ -1278,16 +1388,22 @@
         if (!GAS_API_URL || GAS_API_URL.includes("YOUR_GAS_DEPLOYMENT_ID")) {
             console.warn("GAS_API_URL 尚未設定");
             document.getElementById('loading').style.display = 'none';
-            Swal.fire({
-                title: '尚未配置後端 API 網址',
-                html: '<div style="text-align:left;font-size:0.9rem;color:#4b5563;line-height:1.6;">請先至 <code>members/index.html</code> 第 744 行，將 <code>GAS_API_URL</code> 替換為您的 Google Apps Script Web App 部署網址（必須為 <code>/exec</code> 結尾）即可讀取即時名冊！</div>',
-                icon: 'warning',
-                confirmButtonColor: '#4a8c72'
-            });
+            if (!silent) {
+                Swal.fire({
+                    title: '尚未配置後端 API 網址',
+                    html: '<div style="text-align:left;font-size:0.9rem;color:#4b5563;line-height:1.6;">請先至 <code>members/index.html</code> 第 744 行，將 <code>GAS_API_URL</code> 替換為您的 Google Apps Script Web App 部署網址（必須為 <code>/exec</code> 結尾）即可讀取即時名冊！</div>',
+                    icon: 'warning',
+                    confirmButtonColor: '#4a8c72'
+                });
+            }
             return;
         }
 
-        fetch(GAS_API_URL + '?action=getMembers')
+        const apiUrl = GAS_API_URL + '?action=getMembers'
+            + (requestUid ? ('&userId=' + encodeURIComponent(requestUid)) : '')
+            + '&_t=' + Date.now();
+
+        fetch(apiUrl, { cache: 'no-store' })
             .then(res => res.json())
             .then(data => {
                 renderDirectory(data);
@@ -1295,7 +1411,7 @@
             .catch(err => {
                 console.error("載入名冊失敗:", err);
                 document.getElementById('loading').style.display = 'none';
-                Swal.fire('載入失敗', '連線 Google Apps Script 伺服器失敗：' + err, 'error');
+                if (!silent) Swal.fire('載入失敗', '連線 Google Apps Script 伺服器失敗：' + err, 'error');
             });
     }
 
@@ -1311,8 +1427,19 @@
             console.log("已同步後端稱號配置與說明:", serverTitleConfig);
         }
 
+        isCurrentUserAdmin = Boolean(res.isAdmin);
         allMembers = res.members;
         displayFilteredMembers(getCurrentFilteredList());
+
+        // 若名片視窗已開啟，同步最新成員資料與管理群生日欄位顯示
+        if (selectedMember) {
+            const refreshed = allMembers.find(m => String(m.id).trim().toLowerCase() === String(selectedMember.id).trim().toLowerCase());
+            if (refreshed) {
+                selectedMember = refreshed;
+                syncAdminBirthdayUI(selectedMember);
+                document.getElementById('cardZodiac').textContent = selectedMember.zodiac || '秘密 🤫';
+            }
+        }
     }
 
     function getCurrentFilteredList() {
@@ -1386,6 +1513,7 @@
         document.getElementById('cardName').textContent = selectedMember.name;
         document.getElementById('cardJoinDays').textContent = `已加入 L>S 社群 ${selectedMember.joinDays} 天`;
         renderSocialLinks('cardSocialLinks', selectedMember.socialLinks);
+        syncAdminBirthdayUI(selectedMember);
         document.getElementById('cardJoinDate').textContent = `${selectedMember.joinDate || '未填寫'}`;
         document.getElementById('cardAge').textContent = selectedMember.age || '秘密 🤫';
         document.getElementById('cardZodiac').textContent = selectedMember.zodiac || '秘密 🤫';
@@ -1395,23 +1523,7 @@
         document.getElementById('cardBio').textContent = selectedMember.bio || '這位朋友很神秘，還沒有留下自我介紹唷～';
 
         // 勳章牆
-        let badgeHtml = '';
-        if (selectedMember.badges && selectedMember.badges.length > 0) {
-            selectedMember.badges.forEach(b => {
-                let badgeClass = 'badge-pill';
-                if (b.includes('冠軍') || b.includes('神')) badgeClass += ' champion';
-                else if (b.includes('達人') || b.includes('元老')) badgeClass += ' gold';
-                const info = getBadgeInfo(b);
-                const safeBadge = escapeHtml(b);
-                if (info && info.desc) {
-                    const safeDesc = escapeHtml(info.desc);
-                    badgeHtml += `<span class="${badgeClass}" onclick="showBadgeTooltip(event, '${safeBadge}')" title="點擊查看說明：${safeDesc}">${safeBadge}</span>`;
-                } else {
-                    badgeHtml += `<span class="${badgeClass}">${safeBadge}</span>`;
-                }
-            });
-        }
-        document.getElementById('cardBadges').innerHTML = badgeHtml;
+        renderCardBadges(selectedMember.badges);
         hideBadgeTooltip();
 
         // 活動與發言數據 (主揪、參團、發言、貼圖、收回、日活躍、月活躍、年活躍)
@@ -1428,6 +1540,230 @@
         updateEditButtonVisibility();
 
         animateOpenProfileModal(selectedMember.id, sourceEl);
+    }
+
+    function renderCardBadges(badges) {
+        let badgeHtml = '';
+        if (badges && badges.length > 0) {
+            badges.forEach(b => {
+                let badgeClass = 'badge-pill';
+                if (b.includes('冠軍') || b.includes('神')) badgeClass += ' champion';
+                else if (b.includes('達人') || b.includes('元老')) badgeClass += ' gold';
+                const info = getBadgeInfo(b);
+                const safeBadge = escapeHtml(b);
+                if (info && info.desc) {
+                    const safeDesc = escapeHtml(info.desc);
+                    badgeHtml += `<span class="${badgeClass}" onclick="showBadgeTooltip(event, '${safeBadge}')" title="點擊查看說明：${safeDesc}">${safeBadge}</span>`;
+                } else {
+                    badgeHtml += `<span class="${badgeClass}">${safeBadge}</span>`;
+                }
+            });
+        }
+        const badgesEl = document.getElementById('cardBadges');
+        if (badgesEl) badgesEl.innerHTML = badgeHtml;
+    }
+
+    function syncAdminBirthdayUI(member) {
+        const bdayCell = document.getElementById('cardBirthdayCell');
+        const bdayEl = document.getElementById('cardBirthday');
+        const joinDateCell = document.getElementById('cardJoinDateCell');
+        if (!bdayCell || !bdayEl) return;
+
+        if (isCurrentUserAdmin) {
+            bdayCell.style.display = 'flex';
+            if (joinDateCell) joinDateCell.style.gridColumn = 'span 2';
+            const bdayVal = (member && typeof member.birthday === 'string') ? member.birthday.trim() : '';
+            if (bdayVal) {
+                bdayEl.textContent = bdayVal;
+                bdayEl.classList.remove('is-empty');
+            } else {
+                bdayEl.textContent = '未填寫';
+                bdayEl.classList.add('is-empty');
+            }
+        } else {
+            bdayCell.style.display = 'none';
+            if (joinDateCell) joinDateCell.style.gridColumn = '';
+        }
+    }
+
+    function openEditBirthdayDialog(event) {
+        if (event) event.stopPropagation();
+        if (!isCurrentUserAdmin || !currentUserId || !selectedMember) return;
+
+        const currentBday = (typeof selectedMember.birthday === 'string') ? selectedMember.birthday.trim() : '';
+        let initMonth = '';
+        let initDay = '';
+        const match = currentBday.match(/^(\d{1,2})[-/](\d{1,2})$/);
+        if (match) {
+            initMonth = match[1].padStart(2, '0');
+            initDay = match[2].padStart(2, '0');
+        }
+
+        let monthOptions = '<option value="">-- 空白 --</option>';
+        for (let m = 1; m <= 12; m++) {
+            const val = String(m).padStart(2, '0');
+            monthOptions += `<option value="${val}" ${val === initMonth ? 'selected' : ''}>${val} 月</option>`;
+        }
+
+        const buildDayOptions = (monthStr, selectedDay) => {
+            const maxDaysMap = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            const mNum = parseInt(monthStr, 10);
+            const maxD = (mNum >= 1 && mNum <= 12) ? maxDaysMap[mNum] : 31;
+            let opts = '<option value="">-- 空白 --</option>';
+            for (let d = 1; d <= maxD; d++) {
+                const val = String(d).padStart(2, '0');
+                opts += `<option value="${val}" ${val === selectedDay ? 'selected' : ''}>${val} 日</option>`;
+            }
+            return opts;
+        };
+
+        Swal.fire({
+            title: `🎂 修改「${escapeHtml(selectedMember.name)}」的生日`,
+            html: `
+                <div style="text-align:left;font-size:0.86rem;color:#6b7280;margin-bottom:6px;">
+                    設定為「-- 空白 --」即可清除生日欄位（僅管理群可見）。
+                </div>
+                <div class="bday-select-row">
+                    <select id="swalBdayMonth" class="bday-select" aria-label="生日月份">${monthOptions}</select>
+                    <select id="swalBdayDay" class="bday-select" aria-label="生日日期">${buildDayOptions(initMonth, initDay)}</select>
+                </div>
+                <div style="text-align:right;">
+                    <button type="button" id="swalBtnClearBday" class="btn-clear-bday">🗑️ 清空為空白</button>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonColor: '#4a8c72',
+            cancelButtonColor: '#9ca3af',
+            confirmButtonText: '儲存生日',
+            cancelButtonText: '取消',
+            didOpen: () => {
+                const monthSel = document.getElementById('swalBdayMonth');
+                const daySel = document.getElementById('swalBdayDay');
+                const clearBtn = document.getElementById('swalBtnClearBday');
+
+                const syncDayState = () => {
+                    const mVal = monthSel.value;
+                    if (!mVal) {
+                        daySel.innerHTML = buildDayOptions('', '');
+                        daySel.value = '';
+                        daySel.disabled = true;
+                    } else {
+                        const prevDay = daySel.value;
+                        daySel.disabled = false;
+                        daySel.innerHTML = buildDayOptions(mVal, prevDay);
+                        // 若原本選擇的日期超過新月份最大天數，自動清空或維持有效值
+                        if (prevDay && !Array.from(daySel.options).some(o => o.value === prevDay)) {
+                            daySel.value = '';
+                        }
+                    }
+                };
+
+                syncDayState();
+                monthSel.addEventListener('change', syncDayState);
+                clearBtn.addEventListener('click', () => {
+                    monthSel.value = '';
+                    syncDayState();
+                });
+            },
+            preConfirm: () => {
+                const mVal = document.getElementById('swalBdayMonth').value;
+                const dVal = document.getElementById('swalBdayDay').value;
+                if ((mVal && !dVal) || (!mVal && dVal)) {
+                    Swal.showValidationMessage('請同時選擇月份與日期，或皆設為空白');
+                    return false;
+                }
+                return (mVal && dVal) ? `${mVal}-${dVal}` : '';
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                submitMemberBirthdayUpdate(selectedMember.id, result.value);
+            }
+        });
+    }
+
+    function submitMemberBirthdayUpdate(targetUserId, newBirthday) {
+        if (!isCurrentUserAdmin || !currentUserId || !targetUserId) return;
+
+        Swal.fire({
+            title: '儲存生日中...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        const handleSuccess = function(response) {
+            if (response && response.success) {
+                const updated = response.updated || {};
+                const savedBday = (typeof updated.birthday === 'string') ? updated.birthday : newBirthday;
+                const savedZodiac = updated.zodiac || '秘密 🤫';
+
+                const targetInAll = allMembers.find(m => String(m.id).trim().toLowerCase() === String(targetUserId).trim().toLowerCase());
+                if (targetInAll) {
+                    targetInAll.birthday = savedBday;
+                    targetInAll.zodiac = savedZodiac;
+                    if (Array.isArray(updated.badges)) targetInAll.badges = updated.badges;
+                }
+
+                if (selectedMember && String(selectedMember.id).trim().toLowerCase() === String(targetUserId).trim().toLowerCase()) {
+                    selectedMember.birthday = savedBday;
+                    selectedMember.zodiac = savedZodiac;
+                    if (Array.isArray(updated.badges)) selectedMember.badges = updated.badges;
+
+                    syncAdminBirthdayUI(selectedMember);
+                    document.getElementById('cardZodiac').textContent = selectedMember.zodiac;
+                    if (Array.isArray(updated.badges)) renderCardBadges(selectedMember.badges);
+                }
+
+                displayFilteredMembers(getCurrentFilteredList());
+
+                Swal.fire({
+                    icon: 'success',
+                    title: savedBday ? `已更新生日為 ${savedBday}` : '已清空生日欄位',
+                    timer: 1500,
+                    showConfirmButton: false,
+                    toast: true,
+                    position: 'top'
+                });
+            } else {
+                Swal.fire('更新失敗', (response && response.error) || '未知錯誤', 'error');
+            }
+        };
+
+        const handleError = function(err) {
+            Swal.fire('系統錯誤', String(err), 'error');
+        };
+
+        if (window.google && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(handleSuccess)
+                .withFailureHandler(handleError)
+                .apiUpdateMemberBirthday(currentUserId, targetUserId, newBirthday);
+        } else {
+            const payload = {
+                action: 'updateMemberBirthday',
+                operatorUserId: currentUserId,
+                targetUserId: targetUserId,
+                birthday: newBirthday
+            };
+
+            fetch(GAS_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            })
+                .then(r => r.json())
+                .then(handleSuccess)
+                .catch(postErr => {
+                    console.warn("POST 修改生日受限，嘗試以 GET 模式重試:", postErr);
+                    const getUrl = GAS_API_URL + '?action=updateMemberBirthday'
+                        + '&operatorUserId=' + encodeURIComponent(currentUserId)
+                        + '&targetUserId=' + encodeURIComponent(targetUserId)
+                        + '&birthday=' + encodeURIComponent(newBirthday);
+                    fetch(getUrl)
+                        .then(r => r.json())
+                        .then(handleSuccess)
+                        .catch(handleError);
+                });
+        }
     }
 
     function updateEditButtonVisibility() {
@@ -2343,6 +2679,9 @@
 
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
+            if (window.Swal && typeof Swal.isVisible === 'function' && Swal.isVisible()) {
+                return;
+            }
             const imgLightbox = document.getElementById('img-lightbox');
             if (imgLightbox && imgLightbox.classList.contains('active')) {
                 closeImgLightbox();
