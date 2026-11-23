@@ -710,19 +710,6 @@
             min-width: 0;
         }
 
-        .admin-only-tag {
-            display: inline-block;
-            font-size: 0.65rem;
-            font-weight: 700;
-            color: #0f766e;
-            background: #ccfbf1;
-            border: 1px solid #99f6e4;
-            padding: 0 5px;
-            border-radius: 6px;
-            margin-left: 4px;
-            vertical-align: middle;
-        }
-
         .btn-inline-edit {
             flex-shrink: 0;
             width: 22px;
@@ -1095,7 +1082,7 @@
             <!-- 資訊網格 (管理群專屬生日、年齡、星座、居住地、職業、感情狀態、入群日期) -->
             <div class="info-grid">
                 <div class="info-cell" id="cardBirthdayCell" style="display: none;">
-                    <span class="info-cell-title">🎁 生日<span class="admin-only-tag">管理群</span></span>
+                    <span class="info-cell-title">🎁 生日</span>
                     <div class="info-cell-val-row">
                         <span class="info-cell-val" id="cardBirthday">未填寫</span>
                         <span class="bday-remind-badge" id="cardBirthdayRemindBadge" title="生日提醒狀態">🔕</span>
@@ -1644,6 +1631,12 @@
         if (badgesEl) badgesEl.innerHTML = badgeHtml;
     }
 
+    function canEditMemberBirthday(targetUserId) {
+        if (!currentUserId || !targetUserId) return false;
+        if (isCurrentUserAdmin) return true;
+        return String(currentUserId).trim().toLowerCase() === String(targetUserId).trim().toLowerCase();
+    }
+
     function syncAdminBirthdayUI(member) {
         const bdayCell = document.getElementById('cardBirthdayCell');
         const bdayEl = document.getElementById('cardBirthday');
@@ -1651,11 +1644,11 @@
         const joinDateCell = document.getElementById('cardJoinDateCell');
         if (!bdayCell || !bdayEl) return;
 
-        if (isCurrentUserAdmin) {
+        if (member && canEditMemberBirthday(member.id)) {
             bdayCell.style.display = 'flex';
             if (joinDateCell) joinDateCell.style.gridColumn = 'span 2';
-            const bdayVal = (member && typeof member.birthday === 'string') ? member.birthday.trim() : '';
-            const isRemindOn = Boolean(member && String(member.birthdayRemind || '').trim().toUpperCase() === 'Y');
+            const bdayVal = (typeof member.birthday === 'string') ? member.birthday.trim() : '';
+            const isRemindOn = Boolean(String(member.birthdayRemind || '').trim().toUpperCase() === 'Y');
             if (bdayVal) {
                 bdayEl.textContent = bdayVal;
                 bdayEl.classList.remove('is-empty');
@@ -1665,7 +1658,7 @@
             }
             if (remindBadge) {
                 remindBadge.textContent = isRemindOn ? '🔔' : '🔕';
-                remindBadge.title = isRemindOn ? '生日提醒：已開啟 (Y)' : '生日提醒：已關閉 (N)';
+                remindBadge.title = isRemindOn ? '生日提醒：已開啟' : '生日提醒：已關閉';
             }
         } else {
             bdayCell.style.display = 'none';
@@ -1675,7 +1668,7 @@
 
     function openEditBirthdayDialog(event) {
         if (event) event.stopPropagation();
-        if (!isCurrentUserAdmin || !currentUserId || !selectedMember) return;
+        if (!selectedMember || !canEditMemberBirthday(selectedMember.id)) return;
 
         const currentBday = (typeof selectedMember.birthday === 'string') ? selectedMember.birthday.trim() : '';
         const currentRemindOn = String(selectedMember.birthdayRemind || '').trim().toUpperCase() === 'Y';
@@ -1709,7 +1702,7 @@
             title: `🎂 修改「${escapeHtml(selectedMember.name)}」的生日`,
             html: `
                 <div style="text-align:left;font-size:0.86rem;color:#6b7280;margin-bottom:6px;">
-                    設定為「-- 空白 --」即可清除生日欄位（僅管理群可見）。
+                    設定為「-- 空白 --」即可清除生日欄位（僅管理群和你自己可以看見此欄位）。
                 </div>
                 <div class="bday-select-row">
                     <select id="swalBdayMonth" class="bday-select" aria-label="生日月份">${monthOptions}</select>
@@ -1721,7 +1714,7 @@
                 <label class="bday-remind-row" for="swalBdayRemindSwitch">
                     <div class="bday-remind-label">
                         <span class="bday-remind-title">🔔 生日當天推播提醒</span>
-                        <span class="bday-remind-desc">需開啟（Y）且有填寫生日才會推播祝賀</span>
+                        <span class="bday-remind-desc">需開啟且有填寫生日才會推播祝賀</span>
                     </div>
                     <span class="toggle-switch">
                         <input type="checkbox" id="swalBdayRemindSwitch" ${currentRemindOn ? 'checked' : ''}>
@@ -1784,7 +1777,7 @@
     }
 
     function submitMemberBirthdayUpdate(targetUserId, newBirthday, newBirthdayRemind) {
-        if (!isCurrentUserAdmin || !currentUserId || !targetUserId) return;
+        if (!canEditMemberBirthday(targetUserId)) return;
 
         Swal.fire({
             title: '儲存設定中...',
