@@ -790,6 +790,86 @@
             background: #e5e7eb;
         }
 
+        .bday-remind-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            text-align: left;
+        }
+
+        .bday-remind-label {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .bday-remind-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .bday-remind-desc {
+            font-size: 0.75rem;
+            color: var(--text-sub);
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #cbd5e1;
+            transition: background-color 0.2s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider::before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #ffffff;
+            transition: transform 0.2s;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: var(--primary);
+        }
+
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(20px);
+        }
+
+        .bday-remind-badge {
+            font-size: 0.72rem;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
         /* 自我介紹區 */
         .bio-box {
             background: #f0fdf4;
@@ -1018,7 +1098,8 @@
                     <span class="info-cell-title">🎁 生日<span class="admin-only-tag">管理群</span></span>
                     <div class="info-cell-val-row">
                         <span class="info-cell-val" id="cardBirthday">未填寫</span>
-                        <button type="button" class="btn-inline-edit" id="btnEditBirthday" onclick="openEditBirthdayDialog(event)" title="修改生日" aria-label="修改生日">✏️</button>
+                        <span class="bday-remind-badge" id="cardBirthdayRemindBadge" title="生日提醒狀態">🔕</span>
+                        <button type="button" class="btn-inline-edit" id="btnEditBirthday" onclick="openEditBirthdayDialog(event)" title="修改生日與提醒開關" aria-label="修改生日與提醒開關">✏️</button>
                     </div>
                 </div>
                 <div class="info-cell">
@@ -1566,6 +1647,7 @@
     function syncAdminBirthdayUI(member) {
         const bdayCell = document.getElementById('cardBirthdayCell');
         const bdayEl = document.getElementById('cardBirthday');
+        const remindBadge = document.getElementById('cardBirthdayRemindBadge');
         const joinDateCell = document.getElementById('cardJoinDateCell');
         if (!bdayCell || !bdayEl) return;
 
@@ -1573,12 +1655,17 @@
             bdayCell.style.display = 'flex';
             if (joinDateCell) joinDateCell.style.gridColumn = 'span 2';
             const bdayVal = (member && typeof member.birthday === 'string') ? member.birthday.trim() : '';
+            const isRemindOn = Boolean(member && String(member.birthdayRemind || '').trim().toUpperCase() === 'Y');
             if (bdayVal) {
                 bdayEl.textContent = bdayVal;
                 bdayEl.classList.remove('is-empty');
             } else {
                 bdayEl.textContent = '未填寫';
                 bdayEl.classList.add('is-empty');
+            }
+            if (remindBadge) {
+                remindBadge.textContent = isRemindOn ? '🔔' : '🔕';
+                remindBadge.title = isRemindOn ? '生日提醒：已開啟 (Y)' : '生日提醒：已關閉 (N)';
             }
         } else {
             bdayCell.style.display = 'none';
@@ -1591,6 +1678,7 @@
         if (!isCurrentUserAdmin || !currentUserId || !selectedMember) return;
 
         const currentBday = (typeof selectedMember.birthday === 'string') ? selectedMember.birthday.trim() : '';
+        const currentRemindOn = String(selectedMember.birthdayRemind || '').trim().toUpperCase() === 'Y';
         let initMonth = '';
         let initDay = '';
         const match = currentBday.match(/^(\d{1,2})[-/](\d{1,2})$/);
@@ -1630,11 +1718,21 @@
                 <div style="text-align:right;">
                     <button type="button" id="swalBtnClearBday" class="btn-clear-bday">🗑️ 清空為空白</button>
                 </div>
+                <label class="bday-remind-row" for="swalBdayRemindSwitch">
+                    <div class="bday-remind-label">
+                        <span class="bday-remind-title">🔔 生日當天推播提醒</span>
+                        <span class="bday-remind-desc">需開啟（Y）且有填寫生日才會推播祝賀</span>
+                    </div>
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="swalBdayRemindSwitch" ${currentRemindOn ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </span>
+                </label>
             `,
             showCancelButton: true,
             confirmButtonColor: '#4a8c72',
             cancelButtonColor: '#9ca3af',
-            confirmButtonText: '儲存生日',
+            confirmButtonText: '儲存設定',
             cancelButtonText: '取消',
             didOpen: () => {
                 const monthSel = document.getElementById('swalBdayMonth');
@@ -1668,24 +1766,28 @@
             preConfirm: () => {
                 const mVal = document.getElementById('swalBdayMonth').value;
                 const dVal = document.getElementById('swalBdayDay').value;
+                const remindChecked = document.getElementById('swalBdayRemindSwitch').checked;
                 if ((mVal && !dVal) || (!mVal && dVal)) {
                     Swal.showValidationMessage('請同時選擇月份與日期，或皆設為空白');
                     return false;
                 }
-                return (mVal && dVal) ? `${mVal}-${dVal}` : '';
+                return {
+                    birthday: (mVal && dVal) ? `${mVal}-${dVal}` : '',
+                    birthdayRemind: remindChecked ? 'Y' : 'N'
+                };
             }
         }).then((result) => {
-            if (result.isConfirmed) {
-                submitMemberBirthdayUpdate(selectedMember.id, result.value);
+            if (result.isConfirmed && result.value) {
+                submitMemberBirthdayUpdate(selectedMember.id, result.value.birthday, result.value.birthdayRemind);
             }
         });
     }
 
-    function submitMemberBirthdayUpdate(targetUserId, newBirthday) {
+    function submitMemberBirthdayUpdate(targetUserId, newBirthday, newBirthdayRemind) {
         if (!isCurrentUserAdmin || !currentUserId || !targetUserId) return;
 
         Swal.fire({
-            title: '儲存生日中...',
+            title: '儲存設定中...',
             allowOutsideClick: false,
             didOpen: () => Swal.showLoading()
         });
@@ -1694,17 +1796,22 @@
             if (response && response.success) {
                 const updated = response.updated || {};
                 const savedBday = (typeof updated.birthday === 'string') ? updated.birthday : newBirthday;
+                const savedRemind = (updated.birthdayRemind === 'Y' || updated.birthdayRemind === 'N')
+                    ? updated.birthdayRemind
+                    : (newBirthdayRemind || 'N');
                 const savedZodiac = updated.zodiac || '秘密 🤫';
 
                 const targetInAll = allMembers.find(m => String(m.id).trim().toLowerCase() === String(targetUserId).trim().toLowerCase());
                 if (targetInAll) {
                     targetInAll.birthday = savedBday;
+                    targetInAll.birthdayRemind = savedRemind;
                     targetInAll.zodiac = savedZodiac;
                     if (Array.isArray(updated.badges)) targetInAll.badges = updated.badges;
                 }
 
                 if (selectedMember && String(selectedMember.id).trim().toLowerCase() === String(targetUserId).trim().toLowerCase()) {
                     selectedMember.birthday = savedBday;
+                    selectedMember.birthdayRemind = savedRemind;
                     selectedMember.zodiac = savedZodiac;
                     if (Array.isArray(updated.badges)) selectedMember.badges = updated.badges;
 
@@ -1715,10 +1822,11 @@
 
                 displayFilteredMembers(getCurrentFilteredList());
 
+                const remindLabel = savedRemind === 'Y' ? '提醒：開啟' : '提醒：關閉';
                 Swal.fire({
                     icon: 'success',
-                    title: savedBday ? `已更新生日為 ${savedBday}` : '已清空生日欄位',
-                    timer: 1500,
+                    title: savedBday ? `已更新生日為 ${savedBday}（${remindLabel}）` : `已清空生日欄位（${remindLabel}）`,
+                    timer: 1800,
                     showConfirmButton: false,
                     toast: true,
                     position: 'top'
@@ -1736,13 +1844,14 @@
             google.script.run
                 .withSuccessHandler(handleSuccess)
                 .withFailureHandler(handleError)
-                .apiUpdateMemberBirthday(currentUserId, targetUserId, newBirthday);
+                .apiUpdateMemberBirthday(currentUserId, targetUserId, newBirthday, newBirthdayRemind);
         } else {
             const payload = {
                 action: 'updateMemberBirthday',
                 operatorUserId: currentUserId,
                 targetUserId: targetUserId,
-                birthday: newBirthday
+                birthday: newBirthday,
+                birthdayRemind: newBirthdayRemind
             };
 
             fetch(GAS_API_URL, {
@@ -1757,7 +1866,8 @@
                     const getUrl = GAS_API_URL + '?action=updateMemberBirthday'
                         + '&operatorUserId=' + encodeURIComponent(currentUserId)
                         + '&targetUserId=' + encodeURIComponent(targetUserId)
-                        + '&birthday=' + encodeURIComponent(newBirthday);
+                        + '&birthday=' + encodeURIComponent(newBirthday)
+                        + '&birthdayRemind=' + encodeURIComponent(newBirthdayRemind);
                     fetch(getUrl)
                         .then(r => r.json())
                         .then(handleSuccess)
