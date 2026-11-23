@@ -970,6 +970,13 @@
             line-height: 1.4;
         }
 
+        .edit-hint {
+            font-size: 0.78rem;
+            color: var(--text-sub);
+            line-height: 1.5;
+            margin-top: 2px;
+        }
+
         .social-edit-list {
             display: flex;
             flex-direction: column;
@@ -1195,8 +1202,13 @@
         </div>
         <div class="modal-body">
             <div class="edit-form-group">
-                <label>🎂 年齡</label>
-                <input type="number" id="editAge" class="edit-input" placeholder="例如：28" min="1" max="120" inputmode="numeric">
+                <label>🎂 年齡 / 出生年</label>
+                <input type="number" id="editAge" class="edit-input" placeholder="例如：18（永遠18歲）或 1995（西元出生年）" min="1" inputmode="numeric" onblur="clampBirthYearInput(this)" onchange="clampBirthYearInput(this)">
+                <div class="edit-hint">
+                    • 輸入 <b>1899 以下</b>：顯示為「<b>永遠的XX歲</b>」（保留凍齡設定，例如 18 → 永遠的18歲）<br>
+                    • 輸入 <b>1900～今年（西元出生年）</b>：依生日自動計算實際歲數；若填寫未來年份會自動跳回今年<br>
+                    • <b>留空</b>：顯示為「<b>秘密 🤫</b>」
+                </div>
             </div>
             <div class="edit-form-group">
                 <label>📍 居住地</label>
@@ -1505,6 +1517,7 @@
             if (refreshed) {
                 selectedMember = refreshed;
                 syncAdminBirthdayUI(selectedMember);
+                document.getElementById('cardAge').textContent = getMemberDisplayAge(selectedMember);
                 document.getElementById('cardZodiac').textContent = selectedMember.zodiac || '秘密 🤫';
             }
         }
@@ -1583,7 +1596,7 @@
         renderSocialLinks('cardSocialLinks', selectedMember.socialLinks);
         syncAdminBirthdayUI(selectedMember);
         document.getElementById('cardJoinDate').textContent = `${selectedMember.joinDate || '未填寫'}`;
-        document.getElementById('cardAge').textContent = selectedMember.age || '秘密 🤫';
+        document.getElementById('cardAge').textContent = getMemberDisplayAge(selectedMember);
         document.getElementById('cardZodiac').textContent = selectedMember.zodiac || '秘密 🤫';
         document.getElementById('cardResidence').textContent = selectedMember.residence || '未填寫';
         document.getElementById('cardOccupation').textContent = selectedMember.occupation || '未填寫';
@@ -1800,6 +1813,10 @@
                     targetInAll.birthday = savedBday;
                     targetInAll.birthdayRemind = savedRemind;
                     targetInAll.zodiac = savedZodiac;
+                    if (typeof updated.hasBirthday === 'boolean') targetInAll.hasBirthday = updated.hasBirthday;
+                    if (typeof updated.birthdayPassed === 'boolean') targetInAll.birthdayPassed = updated.birthdayPassed;
+                    if (typeof updated.ageRaw === 'string') targetInAll.ageRaw = updated.ageRaw;
+                    targetInAll.age = getMemberDisplayAge(targetInAll);
                     if (Array.isArray(updated.badges)) targetInAll.badges = updated.badges;
                 }
 
@@ -1807,9 +1824,14 @@
                     selectedMember.birthday = savedBday;
                     selectedMember.birthdayRemind = savedRemind;
                     selectedMember.zodiac = savedZodiac;
+                    if (typeof updated.hasBirthday === 'boolean') selectedMember.hasBirthday = updated.hasBirthday;
+                    if (typeof updated.birthdayPassed === 'boolean') selectedMember.birthdayPassed = updated.birthdayPassed;
+                    if (typeof updated.ageRaw === 'string') selectedMember.ageRaw = updated.ageRaw;
+                    selectedMember.age = getMemberDisplayAge(selectedMember);
                     if (Array.isArray(updated.badges)) selectedMember.badges = updated.badges;
 
                     syncAdminBirthdayUI(selectedMember);
+                    document.getElementById('cardAge').textContent = selectedMember.age;
                     document.getElementById('cardZodiac').textContent = selectedMember.zodiac;
                     if (Array.isArray(updated.badges)) renderCardBadges(selectedMember.badges);
                 }
@@ -2412,11 +2434,65 @@
         }, 150);
     }
 
+    function clampBirthYearInput(inputEl) {
+        if (!inputEl) return '';
+        const val = String(inputEl.value || '').trim();
+        if (!val || !/^\d+$/.test(val)) return val;
+        const num = parseInt(val, 10);
+        const currentYear = new Date().getFullYear();
+        if (num > currentYear) {
+            inputEl.value = String(currentYear);
+            return String(currentYear);
+        }
+        return val;
+    }
+
+    function computeAgeDisplay(ageRaw, birthdayStr, hasBirthday, birthdayPassed) {
+        if (ageRaw === undefined || ageRaw === null) return '秘密 🤫';
+        const clean = String(ageRaw).trim().replace(/[歲年]$/g, '').trim();
+        if (!clean || clean === '秘密' || clean === '秘密 🤫') return '秘密 🤫';
+        if (!/^\d+$/.test(clean)) return clean;
+
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        let num = parseInt(clean, 10);
+        if (num <= 0) return '秘密 🤫';
+        if (num > currentYear) num = currentYear;
+
+        if (num <= 1899) {
+            return `永遠的${num}歲`;
+        }
+
+        let age = currentYear - num;
+        const bdayMatch = birthdayStr ? String(birthdayStr).trim().match(/^(?:\d{4}[-/])?(\d{1,2})[-/](\d{1,2})$/) : null;
+        if (bdayMatch) {
+            const bMonth = parseInt(bdayMatch[1], 10);
+            const bDay = parseInt(bdayMatch[2], 10);
+            const curMonth = now.getMonth() + 1;
+            const curDay = now.getDate();
+            const passed = (curMonth > bMonth) || (curMonth === bMonth && curDay >= bDay);
+            if (!passed) age -= 1;
+        } else if (hasBirthday && birthdayPassed === false) {
+            age -= 1;
+        }
+        return `${Math.max(0, age)}歲`;
+    }
+
+    function getMemberDisplayAge(member) {
+        if (!member) return '秘密 🤫';
+        if (member.ageRaw !== undefined) {
+            return computeAgeDisplay(member.ageRaw, member.birthday, member.hasBirthday, member.birthdayPassed);
+        }
+        return member.age || '秘密 🤫';
+    }
+
     function openEditModal() {
         if (!selectedMember) return;
-        const rawAge = (selectedMember.age && !String(selectedMember.age).includes('秘密'))
-            ? String(selectedMember.age).replace(/[^\d]/g, '')
-            : '';
+        const rawAge = (selectedMember.ageRaw !== undefined)
+            ? String(selectedMember.ageRaw || '')
+            : ((selectedMember.age && !String(selectedMember.age).includes('秘密'))
+                ? String(selectedMember.age).replace(/[^\d]/g, '')
+                : '');
         const social = selectedMember.socialLinks || {};
 
         document.getElementById('editAge').value = rawAge;
@@ -2438,10 +2514,18 @@
     function submitProfileEdit() {
         if (!currentUserId || !selectedMember) return;
 
-        const ageRaw = document.getElementById('editAge').value.trim();
-        if (ageRaw !== '' && (!/^\d+$/.test(ageRaw) || Number(ageRaw) < 1 || Number(ageRaw) > 120)) {
-            Swal.fire('格式錯誤', '年齡請輸入 1 到 120 之間的整數，或留空顯示秘密', 'warning');
-            return;
+        const ageInputEl = document.getElementById('editAge');
+        let ageRaw = ageInputEl.value.trim();
+        if (ageRaw !== '') {
+            if (!/^\d+$/.test(ageRaw) || Number(ageRaw) <= 0) {
+                Swal.fire('格式錯誤', '年齡／出生年請輸入大於 0 的整數，或留空顯示秘密', 'warning');
+                return;
+            }
+            const currentYear = new Date().getFullYear();
+            if (Number(ageRaw) > currentYear) {
+                ageRaw = String(currentYear);
+                ageInputEl.value = ageRaw;
+            }
         }
 
         const igRaw = document.getElementById('editInstagram').value.trim();
@@ -2479,7 +2563,10 @@
             if (response && response.success) {
                 const updated = response.updated || {};
                 // 即時更新內存與 UI
-                selectedMember.age = updated.age || (ageRaw ? (ageRaw + ' 歲') : '秘密 🤫');
+                selectedMember.ageRaw = (updated.ageRaw !== undefined) ? updated.ageRaw : ageRaw;
+                if (typeof updated.hasBirthday === 'boolean') selectedMember.hasBirthday = updated.hasBirthday;
+                if (typeof updated.birthdayPassed === 'boolean') selectedMember.birthdayPassed = updated.birthdayPassed;
+                selectedMember.age = getMemberDisplayAge(selectedMember);
                 selectedMember.residence = updated.residence || (res || '未填寫');
                 selectedMember.occupation = updated.occupation || (occ || '未填寫');
                 selectedMember.relationship = updated.relationship || rel;
