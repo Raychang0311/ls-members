@@ -1036,9 +1036,141 @@
             font-size: 1rem;
             cursor: pointer;
         }
+
+        /* LINE 登入閘道（無訪客模式） */
+        body:not(.is-authenticated) {
+            padding: 0 !important;
+        }
+
+        body:not(.is-authenticated) #loading,
+        body:not(.is-authenticated) .container,
+        body:not(.is-authenticated) #profileModalOverlay,
+        body:not(.is-authenticated) #editModalOverlay,
+        body:not(.is-authenticated) #img-lightbox {
+            display: none !important;
+        }
+
+        .auth-gate {
+            position: fixed;
+            inset: 0;
+            z-index: 4000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: radial-gradient(circle at 20% 15%, rgba(74, 140, 114, 0.14), transparent 55%), var(--bg);
+        }
+
+        .auth-gate[hidden] {
+            display: none !important;
+        }
+
+        .auth-gate__card {
+            width: min(420px, 100%);
+            background: rgba(255, 255, 255, 0.92);
+            -webkit-backdrop-filter: blur(22px) saturate(145%);
+            backdrop-filter: blur(22px) saturate(145%);
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            border-radius: 20px;
+            padding: 32px 24px 26px;
+            box-shadow: 0 24px 52px -20px rgba(16, 26, 22, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+            text-align: center;
+        }
+
+        .auth-gate__logo {
+            width: 68px;
+            height: 68px;
+            margin: 0 auto 18px;
+            border-radius: 18px;
+            background: var(--primary-dark);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 1.35rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 8px 20px -10px rgba(58, 110, 89, 0.45);
+        }
+
+        .auth-gate__logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .auth-gate__checking {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+        }
+
+        .auth-gate__checking[hidden],
+        .auth-gate__blocked[hidden] {
+            display: none !important;
+        }
+
+        .auth-gate__title {
+            margin: 0 0 10px;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .auth-gate__desc {
+            margin: 0;
+            font-size: 0.93rem;
+            line-height: 1.6;
+            color: var(--text-sub);
+        }
+
+        .auth-gate__actions {
+            margin-top: 22px;
+        }
+
+        .btn-gate-login {
+            width: 100%;
+            min-height: 44px;
+            border: none;
+            border-radius: 12px;
+            background: var(--primary-dark);
+            color: #ffffff;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
     </style>
 </head>
 <body>
+
+<!-- LINE 登入閘道（無訪客模式） -->
+<div id="authGate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="authGateTitle">
+    <div class="auth-gate__card">
+        <div class="auth-gate__logo">
+            <img src="https://obs.line-scdn.net/0hTp0LmYC8C18NNRtkYlJ0CF1oAD0-VxVULwEfOChdVgh7VjpTMi8tWiheVmYjfhN1OQMbSSlOCg8obj5iMTIhTnJlHgxgVjVudjgPRmlJIB98VSkIdw/f256x256" alt="L&gt;S Logo" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('L>S'))">
+        </div>
+        <div id="authGateChecking" class="auth-gate__checking">
+            <div class="spinner" aria-hidden="true"></div>
+            <p class="auth-gate__desc">正在驗證 LINE 登入狀態...</p>
+        </div>
+        <div id="authGateBlocked" class="auth-gate__blocked" hidden>
+            <h1 id="authGateTitle" class="auth-gate__title">請登入 LINE 以繼續</h1>
+            <p id="authGateMsg" class="auth-gate__desc">本社群群友名冊僅限群組成員透過 LINE 帳號登入使用，請點擊下方按鈕登入 LINE。</p>
+            <div class="auth-gate__actions">
+                <button type="button" id="authGateLoginBtn" class="btn-gate-login" onclick="triggerLineLogin()">🔑 登入 LINE</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div id="loading">
     <div class="spinner"></div>
@@ -1285,6 +1417,9 @@
     let serverTitleConfig = null;
     let isCurrentUserAdmin = false;
     let directoryLoadedUserId = null;
+    let activeLiffId = DEFAULT_LIFF_ID;
+    let liffReady = false;
+    let membersStarted = false;
 
     let liffDiag = {
         sdkLoaded: false,
@@ -1300,14 +1435,62 @@
         lastError: null
     };
 
+    function extractQueryParam(param) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const direct = urlParams.get(param);
+        if (direct) return direct;
+        const stateStr = urlParams.get('liff.state');
+        if (stateStr) {
+            try {
+                const decoded = decodeURIComponent(stateStr);
+                const m = decoded.match(new RegExp('[?&]' + param + '=([^&#]+)'));
+                if (m) return m[1];
+            } catch (e) {}
+        }
+        return '';
+    }
+
+    function unlockAuthenticatedApp() {
+        document.body.classList.add('is-authenticated');
+        const gate = document.getElementById('authGate');
+        if (gate) gate.hidden = true;
+        if (!membersStarted) {
+            membersStarted = true;
+            loadMembersDirectory();
+        }
+    }
+
+    function showLoginGate(title, message) {
+        document.body.classList.remove('is-authenticated');
+        const gate = document.getElementById('authGate');
+        const checking = document.getElementById('authGateChecking');
+        const blocked = document.getElementById('authGateBlocked');
+        const titleEl = document.getElementById('authGateTitle');
+        const msgEl = document.getElementById('authGateMsg');
+        if (gate) gate.hidden = false;
+        if (checking) checking.hidden = true;
+        if (blocked) blocked.hidden = false;
+        if (titleEl) titleEl.textContent = title || '無法自動登入 LINE';
+        if (msgEl) msgEl.textContent = message || '本社群群友名冊僅限群組成員透過 LINE 帳號登入使用，請點擊下方按鈕登入 LINE。';
+    }
+
+    function triggerLineLogin() {
+        if (window.liff && activeLiffId) {
+            if (liffReady) {
+                try {
+                    liff.login({ redirectUri: window.location.href });
+                    return;
+                } catch (e) {}
+            }
+            window.location.href = 'https://liff.line.me/' + encodeURIComponent(activeLiffId);
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
-        // 1. 初始化身分認證 (多重架構：後端注入 + Context + ID Token + Profile + 本地持久化)
+        // 1. 初始化身分認證，驗證通過後再載入群友名冊
         initLiffAuth();
 
-        // 2. 載入群友名冊
-        loadMembersDirectory();
-
-        // 3. 綁定卡片滾動監聽以自動隱藏稱號 Tooltip
+        // 2. 綁定卡片滾動監聽以自動隱藏稱號 Tooltip
         const modalBody = document.querySelector('.profile-card-modal .modal-body');
         if (modalBody) {
             modalBody.addEventListener('scroll', hideBadgeTooltip);
@@ -1318,13 +1501,23 @@
      * LIFF 與全域身分認證 (由 LINE 官方 SDK 自動嚴格驗證，禁止手動自選或竄改)
      */
     function initLiffAuth() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const liffId = urlParams.get('liffId') || DEFAULT_LIFF_ID;
+        activeLiffId = extractQueryParam('liffId') || DEFAULT_LIFF_ID;
+        let authFinished = false;
+        const finishAuthCheck = () => {
+            if (authFinished) return;
+            authFinished = true;
+            if (currentUserId) unlockAuthenticatedApp();
+            else showLoginGate();
+        };
 
-        // 1. 檢查 GAS 後端 doGet(e) 伺服器端注入之 User ID (若存在)
+        // 1. 檢查 GAS 後端 doGet(e) 伺服器端注入或網址帶入之 User ID
         if (typeof window.SERVER_USER_ID !== 'undefined' && window.SERVER_USER_ID && window.SERVER_USER_ID.trim()) {
             liffDiag.serverUserId = window.SERVER_USER_ID.trim();
             handleLoginSuccess(liffDiag.serverUserId, '已驗證群友');
+        }
+        const paramUid = extractQueryParam('userId') || extractQueryParam('uid');
+        if (paramUid && !currentUserId) {
+            handleLoginSuccess(paramUid, 'LINE 群友');
         }
 
         // 2. 檢查 localStorage 本地持久化記錄 (僅作為快速載入快取)
@@ -1337,45 +1530,58 @@
             }
         } catch (e) {}
 
+        if (currentUserId) finishAuthCheck();
+
         // 3. 初始化 LINE LIFF SDK (正式官方認證，防竄改)
-        if (window.liff) {
+        if (window.liff && activeLiffId) {
             liffDiag.sdkLoaded = true;
-            liff.init({ liffId: liffId }).then(() => {
+            liff.init({ liffId: activeLiffId }).then(() => {
+                liffReady = true;
                 liffDiag.initSuccess = true;
                 try {
                     liffDiag.isInClient = liff.isInClient();
                     liffDiag.isLoggedIn = liff.isLoggedIn();
                 } catch (e) {}
 
+                try {
+                    const context = liff.getContext();
+                    if (context && context.userId && !currentUserId) {
+                        liffDiag.contextUserId = context.userId;
+                        handleLoginSuccess(context.userId, 'LINE 群友');
+                    }
+                } catch (e) {}
+
+                try {
+                    const idToken = liff.getDecodedIDToken();
+                    if (idToken && idToken.sub && !currentUserId) {
+                        liffDiag.idTokenSub = idToken.sub;
+                        handleLoginSuccess(idToken.sub, idToken.name || 'LINE 使用者');
+                    }
+                } catch (e) {}
+
                 // 若為已登入狀態，透過 getProfile 提取真實 LINE 身分
                 if (liff.isLoggedIn()) {
-                    liff.getProfile().then(profile => {
-                        liffDiag.profileUserId = profile.userId;
-                        handleLoginSuccess(profile.userId, profile.displayName);
+                    return liff.getProfile().then(profile => {
+                        if (profile && profile.userId) {
+                            liffDiag.profileUserId = profile.userId;
+                            handleLoginSuccess(profile.userId, profile.displayName);
+                        }
+                        finishAuthCheck();
                     }).catch(err => {
                         console.warn("liff.getProfile 錯誤:", err);
                         liffDiag.lastError = "getProfile: " + (err.message || err);
+                        finishAuthCheck();
                     });
-                } else if (liff.isInClient()) {
-                    // 手機 LINE 內部開啟時，直接由 Context 提取使用者 ID
-                    try {
-                        const context = liff.getContext();
-                        if (context && context.userId) {
-                            liffDiag.contextUserId = context.userId;
-                            handleLoginSuccess(context.userId, 'LINE 群友');
-                        }
-                    } catch (e) {}
-                } else {
-                    if (!currentUserId) updateAuthUI(false, "訪客模式");
                 }
+                finishAuthCheck();
             }).catch(err => {
                 console.warn("liff.init 失敗:", err);
                 liffDiag.lastError = "init: " + (err.message || err);
-                if (!currentUserId) updateAuthUI(false, "未連線 LINE");
+                finishAuthCheck();
             });
         } else {
             liffDiag.lastError = "LIFF SDK 未載入";
-            if (!currentUserId) updateAuthUI(false, "無 SDK");
+            finishAuthCheck();
         }
     }
 
@@ -1440,13 +1646,7 @@
     }
 
     function redirectToLiffAuth() {
-        if (window.liff) {
-            // 在頂層視窗 (GitHub Pages) 下，直接執行標準 LINE Login 導向，無 iframe 阻斷
-            liff.login();
-            return;
-        }
-        const liffUrl = 'https://liff.line.me/' + DEFAULT_LIFF_ID;
-        window.location.href = liffUrl;
+        triggerLineLogin();
     }
 
     function loadMembersDirectory(silent) {
